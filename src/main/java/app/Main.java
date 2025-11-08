@@ -8,10 +8,13 @@ import net.OiRestUpdater;
 import output.ConsoleSignalPrinter;
 import output.SignalPrinter;
 import signal.TradeSignal;
+import state.SymbolState;
 import stats.SignalStatsService;
 import store.MarketDataStore;
 
 import java.sql.DriverManager;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Main launcher with graceful STOP command:
@@ -28,7 +31,8 @@ public class Main {
 //            stats.DatabaseInit.init(conn);
 //        }
 
-        PumpLiquidityAnalyzer analyzer = new PumpLiquidityAnalyzer();
+        Map<String, SymbolState> symbols = new ConcurrentHashMap<>();
+        PumpLiquidityAnalyzer analyzer = new PumpLiquidityAnalyzer(symbols);
         MetricsProviderInit.init(analyzer);
         SignalStatsService.setMetricsProvider(new stats.AnalyzerMetricsProvider(analyzer));
         SignalPrinter printer = new ConsoleSignalPrinter();

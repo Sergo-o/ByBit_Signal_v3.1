@@ -9,7 +9,7 @@ public final class AutoTuner {
     public enum Profile { GLOBAL, MICRO }
 
     /** Пакет параметров для адаптации */
-    public static final class AggressorParams {
+    public static class AggressorParams {
         public int    minStreak        = 4;
         public double minVolumeSpikeX  = 2.2;
         public double minDominance     = 0.68;

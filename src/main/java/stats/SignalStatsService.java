@@ -2,9 +2,10 @@ package stats;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import tuning.AutoTuner;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.Writer;
 import java.nio.file.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -12,6 +13,7 @@ import java.util.concurrent.*;
 
 /**
  * Singleton service for signal tracking + periodic snapshots + export (JSON/CSV).
+ * SQL/AutoTuner здесь не трогаем — только файловый экспорт и in-memory трекинг.
  */
 public class SignalStatsService {
 
@@ -19,8 +21,8 @@ public class SignalStatsService {
     public static SignalStatsService getInstance() { return INSTANCE; }
 
     // --- configurable ---
-    private final int  SNAPSHOT_INTERVAL_SECONDS = 120; // 2 минуты
-    private final int  SNAPSHOT_ROUNDS = 4;             // 4 раунда (~8 минут)
+    private final int SNAPSHOT_INTERVAL_SECONDS = 120; // 2 минуты
+    private final int SNAPSHOT_ROUNDS = 4;             // 4 снимка (~8 минут)
     private final boolean AUTO_EXPORT_ON_COMPLETE = true;
     private final Path EXPORT_DIR = Paths.get("./signal_exports");
     // ---------------------
@@ -36,15 +38,23 @@ public class SignalStatsService {
         try { Files.createDirectories(EXPORT_DIR); } catch (IOException ignored) {}
     }
 
-    // === публичный метод для установки провайдера метрик ===
+    // === ПУБЛИЧНЫЙ метод установки провайдера метрик ===
     public static void setMetricsProvider(ICurrentMetricsProvider provider) {
         CurrentMetricsProvider.set(provider);
     }
 
-    // === удобная обёртка: старт трека по готовому TradeSignal ===
+    // === Удобная обёртка: старт трека по готовому TradeSignal ===
     public String trackSignal(signal.TradeSignal ts, state.SymbolState s) {
-        // NOTE: если в твоём TradeSignal поле названо иначе (напр. funding),
-        // замени ts.fundingRate() на ts.funding()
+        // Если в твоём TradeSignal поле называется иначе (например, funding вместо fundingRate),
+        // замени вызов ниже на соответствующий геттер.
+        double funding = 0.0;
+        try {
+            funding = ts.fundingRate();
+        } catch (Throwable ignored) {
+            // если у ts нет fundingRate(), оставим 0.0 или добавь другой геттер:
+            // funding = ts.funding();
+        }
+
         SignalSnapshot snap = new SignalSnapshot(
                 System.currentTimeMillis(),
                 ts.price(),
@@ -52,10 +62,10 @@ public class SignalStatsService {
                 ts.volNow(),
                 ts.buyRatio(),
                 ts.voltRel(),
-                ts.fundingRate(), // <-- см. примечание выше
+                funding,
                 "initial",
-                0.0,  // peakProfit начально 0
-                0.0   // drawdown   начально 0
+                0.0,  // peakProfit на старте
+                0.0   // drawdown   на старте
         );
 
         return trackSignal(
@@ -69,7 +79,7 @@ public class SignalStatsService {
         );
     }
 
-    /** true, если все активные записи завершены и выгружены */
+    /** true, если все записи завершены */
     public boolean allCompleted() {
         return records.values().stream().allMatch(r -> r.completed);
     }
@@ -99,7 +109,7 @@ public class SignalStatsService {
         );
         scheduledTasks.put(id, f);
 
-        // финализация после N раундов (+ небольшой запас)
+        // финализация после N раундов (+ небольшой запас один интервал)
         scheduler.schedule(() -> finishTracking(id),
                 (long) SNAPSHOT_INTERVAL_SECONDS * (SNAPSHOT_ROUNDS + 1),
                 TimeUnit.SECONDS);
@@ -115,62 +125,25 @@ public class SignalStatsService {
         return true;
     }
 
-    public void forceFinish(String id) {
-        finishTracking(id);
-    }
-
-    // завершить и экспортировать
+    // завершить и экспортировать (без SQL)
     public void finishTracking(String id) {
         SignalRecord r = records.get(id);
-        if (r.completed) return;
         if (r == null) return;
+        if (r.completed) return; // защита от двойного завершения
+
         ScheduledFuture<?> f = scheduledTasks.remove(id);
         if (f != null) f.cancel(false);
+
         r.completed = true;
 
         if (AUTO_EXPORT_ON_COMPLETE) {
-            try { exportRecord(r); } catch (Exception e) { e.printStackTrace(); }
-
-            // --- DB + AutoTuner UPDATE ---
-
-
-                try {
-                    Class.forName("org.sqlite.JDBC");
-                } catch (ClassNotFoundException e) {
-                    throw new RuntimeException(e);
-                }
-
-//            try (var repo = new stats.SignalSqlRepository("jdbc:sqlite:signals.db")) {
-//
-//                // 1) сохранить сам сигнал
-//                repo.upsertSignal(r);
-//
-//                // 2) сохранить снапшоты
-//                repo.insertSnapshots(r.id, r.snapshots);
-//
-            boolean isMicro = r.isMicro; // из TradeSignal
-            AutoTuner.getInstance().onSignalFinished(
-                    isMicro ? AutoTuner.Profile.MICRO : AutoTuner.Profile.GLOBAL,
-                    r.maxReturn * 100.0,
-                    r.minReturn * 100.0
-            );
-
-                tuning.AutoTuner.getInstance().applyToFilters("GLOBAL");
-
-                // 4) лог параметров авто-тюнера (для анализа)
-                var p = tuning.AutoTuner.getInstance().getParams("GLOBAL");
-                repo.insertParamsSnapshot(
-                        "GLOBAL", System.currentTimeMillis(),
-                        p.minStreak, p.minVolumeSpikeX, p.minDominance, p.minAbsVolumeUsd,
-                        p.ewmaWinRate, p.ewmaPeakProfit, p.ewmaDrawdown, p.ewmaThroughput
-                );
-
-
-                repo.commit();
-            } catch (Exception e) { e.printStackTrace(); }
+            try {
+                exportRecord(r);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
-
 
     // экспорт одной записи в JSON + CSV
     public void exportRecord(SignalRecord r) throws IOException {
@@ -191,12 +164,14 @@ public class SignalStatsService {
             pw.println();
             pw.println("snapshot_ts,price,oiNow,volNow,buyRatio,voltRel,funding,peakProfit,drawdown,note");
 
+            List<SignalSnapshot> copy;
             synchronized (r.snapshots) {
-                for (SignalSnapshot s : r.snapshots) {
-                    pw.printf("%d,%.8f,%.2f,%.2f,%.4f,%.4f,%.8f,%.4f,%.4f,%s%n",
-                            s.timestampMs, s.price, s.oiNow, s.volNow, s.buyRatio, s.voltRel, s.funding,
-                            s.peakProfit, s.drawdown, sanitize(s.note));
-                }
+                copy = new ArrayList<>(r.snapshots);
+            }
+            for (SignalSnapshot s : copy) {
+                pw.printf("%d,%.8f,%.2f,%.2f,%.4f,%.4f,%.8f,%.4f,%.4f,%s%n",
+                        s.timestampMs, s.price, s.oiNow, s.volNow, s.buyRatio, s.voltRel, s.funding,
+                        s.peakProfit, s.drawdown, sanitize(s.note));
             }
         }
     }
@@ -234,9 +209,9 @@ public class SignalStatsService {
             CurrentMetrics m = prov.getMetricsFor(r.symbol);
             if (m == null) { rounds++; return; }
 
-            // Текущая доходность относительно цены входа
+            // Текущая доходность относительно входа
             double currPrice = m.price;
-            double ret = (currPrice / r.initPrice - 1.0);
+            double ret = (r.initPrice > 0.0) ? (currPrice / r.initPrice - 1.0) : 0.0;
 
             // Обновляем экстремумы
             r.maxReturn = Math.max(r.maxReturn, ret);
@@ -250,9 +225,9 @@ public class SignalStatsService {
                     m.buyRatio,
                     m.voltRel,
                     m.funding,
-                    null,
-                    r.maxReturn * 100.0,   // peak profit, %
-                    r.minReturn * 100.0    // drawdown, %
+                    null,                        // note
+                    r.maxReturn * 100.0,         // peak profit, %
+                    r.minReturn * 100.0          // drawdown, %
             );
 
             r.addSnapshot(snap);

@@ -24,7 +24,7 @@ public final class MicroNN {
         double oiX = oiNow / avgOi;
 
         double flow = s.buyAgg1m + s.sellAgg1m;
-        double flowX = flow / Math.max(s.avgFlowUsd, 1.0);
+        double flowX = flow / Math.max(s.avgAggressorVol, 1.0);
 
         double buyRatio = (flow > 0) ? s.buyAgg1m / flow : 0.5;
         double deltaShift = buyRatio - s.avgDeltaBuy;
