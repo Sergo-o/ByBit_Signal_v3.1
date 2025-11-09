@@ -10,6 +10,9 @@ public class SymbolState {
     public final Deque<Double> volumes = new ArrayDeque<>();
     public final Deque<Double> oiList = new ArrayDeque<>();
 
+    public long startMs = System.currentTimeMillis();
+
+
     // === Aggressor streams (last N trades) ===
     public final Deque<Boolean> aggressorDirections = new ArrayDeque<>();
     public final Deque<Double> aggressorVolumes = new ArrayDeque<>();
@@ -21,6 +24,8 @@ public class SymbolState {
     public double liqBuy1m  = 0.0; // сумма ликвидаций шортов (buy pressure)
     public double liqSell1m = 0.0; // сумма ликвидаций лонгов (sell pressure)
 
+    public double oiVelocity  = 0.0;
+    public double oiAcceleration  = 0.0;
 
     // === Liquidation EWMA ===
     public double liqLongUsd = 0.0;
