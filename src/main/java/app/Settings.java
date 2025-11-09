@@ -17,6 +17,14 @@ public final class Settings {
 
     public static final double ENTER_MIN_SCORE   = 0.55;
 
+    // только для обучения — ослабляем фильтр
+    public static double TRAIN_OI_VEL_FACTOR = 0.2;
+    public static double TRAIN_OI_ACCEL_FACTOR = 0.2;
+
+    public static final double PENALTY_ADAPTIVE = 0.15;
+    public static final double PENALTY_BURST = 0.25;
+
+
     public static final double MICRO_OI_USD = 2_000_000; // Новый порог микро-кап
     public static final double WATCH_MIN_VOL_X = 1.05; // Новый порог для WATCH
     public static final double WATCH_MIN_OI_X = 1.002; // Новый порог для WATCH

@@ -41,7 +41,15 @@ public final class OIAccelerationFilter {
             accelThresh *= 0.5;
         }
 
-        boolean ok = velNow >= velThresh && accel >= accelThresh;
+        double minVel = MIN_OI_VELOCITY;
+        double minAcc = MIN_OI_ACCEL;
+
+        if (Settings.OI_TRAINING_MODE) {
+            minVel *= Settings.TRAIN_OI_VEL_FACTOR;
+            minAcc *= Settings.TRAIN_OI_ACCEL_FACTOR;
+        }
+
+        boolean ok = velNow >= minVel && accel >= minAcc;
 
         if (!ok) {
             System.out.printf(
