@@ -57,16 +57,59 @@ public class Main {
         new Thread(() -> {
             try (var scanner = new java.util.Scanner(System.in)) {
                 while (true) {
-                    String input = scanner.nextLine().trim();
-                    if (input.equalsIgnoreCase("stop")) {
-                        System.out.println("\n🛑 Команда STOP получена!");
-                        System.out.println("⏸ Останавливаем генерацию новых сигналов...");
-                        stopRequested = true;
-                        break;
+                    String input = scanner.nextLine().trim().toLowerCase();
+
+                    switch (input) {
+
+                        case "stop":
+                            System.out.println("\n🛑 Команда STOP получена!");
+                            System.out.println("⏸ Останавливаем генерацию новых сигналов...");
+                            stopRequested = true;
+                            return;
+
+                        case "train:on":
+                            Settings.OI_TRAINING_MODE = true;
+                            System.out.println("✅ [TRAIN MODE] OI обучение включено — фильтры смягчены");
+
+                            // Ослабляем пороги прямо сейчас
+                            filters.DynamicThresholds.MIN_STREAK = Math.max(1, filters.DynamicThresholds.MIN_STREAK - 1);
+                            filters.DynamicThresholds.MIN_VOLUME_SPIKE_X *= 0.8;
+                            filters.DynamicThresholds.MIN_DOMINANCE -= 0.05;
+
+                            break;
+
+                        case "train:off":
+                            Settings.OI_TRAINING_MODE = false;
+                            System.out.println("💎 [LIVE MODE] OI фильтр активирован — жесткие пороги");
+
+                            // Вернём стандартные пороги
+                            filters.DynamicThresholds.MIN_STREAK = 3;
+                            filters.DynamicThresholds.MIN_VOLUME_SPIKE_X = 2.2;
+                            filters.DynamicThresholds.MIN_DOMINANCE = 0.62;
+
+                            break;
+
+                        case "train:status":
+                            System.out.println("📊 OI_TRAINING_MODE = " + Settings.OI_TRAINING_MODE);
+                            break;
+
+                        case "help":
+                            System.out.println("""
+                    📌 Доступные команды:
+                       stop         — остановить генерацию сигналов
+                       train:on     — включить режим обучения OI фильтра
+                       train:off    — выключить обучение, включить фильтрацию
+                       train:status — показать состояние тренировки
+                       help         — команды помощи
+                    """);
+                            break;
+
+                        default:
+                            System.out.println("❓ Неизвестная команда. Напишите 'help'");
                     }
                 }
             }
-        }, "StopCommandListener").start();
+        }, "ConsoleCommandListener").start();
 
         // ===== основной цикл =====
         while (true) {

@@ -32,11 +32,30 @@ public final class Settings {
     public static final double AGGR_DOM_BONUS = 0.08; // Новый порог для агрессора
     public static final double AGGR_MIN_USD = 30_000; // Новый порог для агрессора
 
+    // Авто-тюнинг OI-фильтра включён/выключен
+    public static boolean OI_AUTOTUNER_ENABLED = true;
+
+
     public static final double MIN_FLOW_FLOOR = 20_000; // Новый порог для flow
     public static final double MIN_FLOW_RATIO = 0.02; // Новый порог для flow
 
     public static final double REGIME_MIN_SLOPE = 0.002; // Новый порог для Market Regime
     public static final double REGIME_VOL_LOW_X = 1.10; // Новый порог для Market Regime
+
+    // === OI filter tuning ===
+    public static boolean OI_FILTER_LOG_ENABLED = true;   // логировать метрики (как в твоих логах)
+    public static boolean OI_TRAINING_MODE      = true;   // тренировочный режим: фильтр не блокирует ничего
+
+    // Базовые очень мягкие пороги (в долях, не процентах)
+    public static double OI_MIN_VEL_BASE   = 1e-6;        // базовый минимум по скорости OI
+    public static double OI_MIN_ACCEL_BASE = 5e-7;        // базовый минимум по ускорению OI
+
+    // Чем выше относительный объём (volRel), тем сильнее ослабляем пороги
+// итоговый множитель = 1 - clamp((volRel-1) * OI_VOL_RELAX_COEF, 0..0.8)
+    public static double OI_VOL_RELAX_COEF = 0.25;
+
+    // Для микро-профиля можно ещё немного ослабить пороги (умножается на microK)
+    public static double OI_MICRO_RELAX_K  = 0.6;         // 0.6 = ослабить на 40%
 
 
     // Порог силы

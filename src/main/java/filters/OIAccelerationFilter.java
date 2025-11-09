@@ -1,65 +1,56 @@
 package filters;
 
+import app.Settings;
 import state.SymbolState;
-import tuning.AutoTuner;
 
 public final class OIAccelerationFilter {
 
-    private static final double EMA_ALPHA = 0.3;
-
-    // базовые минимальные пороги (fallback)
-    private static final double BASE_MIN_OI_VELOCITY = 0.0000001; //
-    private static final double BASE_MIN_OI_ACCEL     = 0.00000005; //
+    // Базовые пороги (минимальные; ты уже сильно их снижал — тут адекватный дефолт)
+    private static final double BASE_MIN_OI_VELOCITY = 0.00010;  // 0.01%
+    private static final double BASE_MIN_OI_ACCEL     = 0.00005;  // 0.005%
 
     public static boolean pass(SymbolState s) {
-        if (s.oiList.size() < 3) return true;
+        // Нужны хотя бы 3 точки OI
+        if (s.oiList == null || s.oiList.size() < 3) return true;
 
-        Double oi0 = s.oiList.peekLast();
-        Double oi1 = s.oiList.toArray(new Double[0])[s.oiList.size() - 2];
-        Double oi2 = s.oiList.toArray(new Double[0])[s.oiList.size() - 3];
+        // Достаём три последних значения безопасно
+        Double[] arr = s.oiList.toArray(new Double[0]);
+        double oi0 = nz(arr[arr.length - 1]);
+        double oi1 = nz(arr[arr.length - 2]);
+        double oi2 = nz(arr[arr.length - 3]);
 
-        if (oi0 == null || oi1 == null || oi2 == null) return true;
+        if (oi1 <= 0 || oi2 <= 0) return true;
 
-        double velPrev = (oi1 - oi2) / Math.max(oi2, 1);
-        double velNow  = (oi0 - oi1) / Math.max(oi1, 1);
+        double velPrev = (oi1 - oi2) / oi2;
+        double velNow  = (oi0 - oi1) / oi1;
         double accel   = velNow - velPrev;
 
-        s.oiVelocity = velNow;
-        s.oiAcceleration = accel;
+        // микропрофиль — смягчаем пороги
+        boolean isMicro = s.avgOiUsd > 0 && oi0 < Math.max(5_000_000, s.avgOiUsd * 0.75);
 
-        boolean isMicro = s.avgOiUsd < AutoTuner.getInstance()
-                .getParams(AutoTuner.Profile.GLOBAL)
-                .microOiUsd;
+        double velThresh   = BASE_MIN_OI_VELOCITY;
+        double accelThresh = BASE_MIN_OI_ACCEL;
 
-        var p = AutoTuner.getInstance().getParams(
-                isMicro ? AutoTuner.Profile.MICRO : AutoTuner.Profile.GLOBAL
-        );
-
-        double minVel   = Math.min(BASE_MIN_OI_VELOCITY, p.minOiImpulseX);
-        double minAccel = Math.min(BASE_MIN_OI_ACCEL,     p.minOiImpulseX * 0.5);
-
-        boolean pass =
-                velNow >= minVel &&
-                        accel  >= minAccel;
-
-        if (pass) {
-            AutoTuner.getInstance().onFilterPass(
-                    isMicro ? AutoTuner.Profile.MICRO : AutoTuner.Profile.GLOBAL
-            );
+        if (isMicro) {
+            velThresh   *= 0.7;
+            accelThresh *= 0.7;
+        }
+        // training mode — ещё мягче и подробный лог
+        if (Settings.OI_TRAINING_MODE) {
+            velThresh   *= 0.5;
+            accelThresh *= 0.5;
         }
 
-        // логируем только когда не прошло
-        if (!pass) {
-            double lastVol = (s.volumes.peekLast() != null) ? s.volumes.peekLast() : 0;
-            double volRel = (s.avgVolUsd > 0) ? lastVol / s.avgVolUsd : 0;
+        boolean ok = velNow >= velThresh && accel >= accelThresh;
 
+        if (!ok) {
             System.out.printf(
-                    "[Filter] OIAcceler vel=%.5f (min=%.5f) accel=%.5f (min=%.5f) volRel=%.2f micro=%s oi: %.0f→%.0f%n",
-                    velNow, minVel, accel, minAccel, volRel, isMicro,
-                    oi1, oi0
+                    "[Filter] OIAcceler vel=%.5f (min=%.5f) accel=%.5f (min=%.5f) micro=%s oi: %.0f→%.0f%n",
+                    velNow, velThresh, accel, accelThresh, isMicro, oi1, oi0
             );
         }
-
-        return pass;
+        return ok;
     }
+
+    private static double nz(Double d) { return d == null ? 0.0 : d; }
 }

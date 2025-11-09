@@ -10,6 +10,8 @@ import signal.TradeSignal;
 import signal.Stage;
 import state.SymbolState;
 import debug.DebugPrinter;
+import stats.SignalSnapshot;
+import stats.SignalStatsService;
 
 import java.util.Map;
 import java.util.Optional;
@@ -71,7 +73,7 @@ public class PumpLiquidityAnalyzer {
             s.buyAgg1m = 0;
             s.sellAgg1m = 0;
 
-            s.liqBuy1m  = 0.0;
+            s.liqBuy1m = 0.0;
             s.liqSell1m = 0.0;
         }
     }
@@ -107,7 +109,6 @@ public class PumpLiquidityAnalyzer {
     }
 
 
-
     // ============================================
     //               ANALYSIS LOGIC
     // ============================================
@@ -116,14 +117,13 @@ public class PumpLiquidityAnalyzer {
         SymbolState s = state.get(symbol);
         if (s == null) return Optional.empty();
         synchronized (s) {
-
             if (s.closes.size() < MIN_BARS_FOR_ANALYSIS) return Optional.empty();
             if (System.currentTimeMillis() - startTime < 60_000) return Optional.empty();
 
-            if (!OIAccelerationFilter.pass(s)) {
-                DebugPrinter.printIgnore(symbol, "[Filter] OIAcceler");
-                return Optional.empty();
-            }
+//            if (!OIAccelerationFilter.pass(s)) {
+//                DebugPrinter.printIgnore(symbol, "[Filter] OIAcceler");
+//                return Optional.empty();
+//            }
 
             double oiNow = s.oiList.getLast();
             boolean isHeavy = SEED_HEAVY.contains(symbol) || s.avgVolUsd >= 5_000_000;
@@ -143,10 +143,10 @@ public class PumpLiquidityAnalyzer {
             double buyRatio = flow > 0 ? (s.buyAgg1m / flow) : 0.5;
             boolean isLong = buyRatio > 0.5;
 
-            if (!AdaptiveAggressorFilter.pass(s, isLong, symbol)) {
-                DebugPrinter.printIgnore(symbol, "[Filter] AdaptiveAggr");
-                return Optional.empty();
-            }
+//            if (!AdaptiveAggressorFilter.pass(s, isLong, symbol)) {
+//                DebugPrinter.printIgnore(symbol, "[Filter] AdaptiveAggr");
+//                return Optional.empty();
+//            }
 
             // micro model
             boolean isMicro = oiNow < MICRO_OI_USD;
@@ -158,10 +158,10 @@ public class PumpLiquidityAnalyzer {
                 }
             }
 
-            if (!AggressorBurstFilter.pass(s, isLong)) {
-                DebugPrinter.printIgnore(symbol, "No aggressor burst");
-                return Optional.empty();
-            }
+//            if (!AggressorBurstFilter.pass(s, isLong)) {
+//                DebugPrinter.printIgnore(symbol, "No aggressor burst");
+//                return Optional.empty();
+//            }
 
             // build signal
             TradeSignal sig = new TradeSignal(
@@ -172,6 +172,10 @@ public class PumpLiquidityAnalyzer {
                     isMicro
             );
 
+            // запись сигнала + старт автоснимков (JSON/CSV)
+            SignalStatsService.getInstance().trackSignal(sig, s);
+
+// cooldown / housekeeping
             s.cooldownUntil = System.currentTimeMillis() + (isHeavy ? COOLDOWN_MS_HEAVY : COOLDOWN_MS_LIGHT);
             s.lastSignalAtMs = System.currentTimeMillis();
             s.watchStreak = 0;
