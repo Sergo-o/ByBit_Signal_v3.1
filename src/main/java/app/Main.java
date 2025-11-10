@@ -67,46 +67,120 @@ public class Main {
                             stopRequested = true;
                             return;
 
+                        // ====== OI TRAIN режим ======
                         case "train:on":
-                            Settings.OI_TRAINING_MODE = true;
-                            System.out.println("✅ [TRAIN MODE] OI обучение включено — фильтры смягчены");
+                            Settings.OI_TRAIN = true;
+                            Settings.OI_FILTER_ENABLED = true;
+                            System.out.println("✅ [TRAIN MODE] OI обучение включено — фильтр смягчён");
 
-                            // Ослабляем пороги прямо сейчас
                             filters.DynamicThresholds.MIN_STREAK = Math.max(1, filters.DynamicThresholds.MIN_STREAK - 1);
                             filters.DynamicThresholds.MIN_VOLUME_SPIKE_X *= 0.8;
                             filters.DynamicThresholds.MIN_DOMINANCE -= 0.05;
-
                             break;
 
                         case "train:off":
-                            Settings.OI_TRAINING_MODE = false;
-                            System.out.println("💎 [LIVE MODE] OI фильтр активирован — жесткие пороги");
+                            Settings.OI_TRAIN = false;
+                            Settings.OI_FILTER_ENABLED = true;
+                            System.out.println("💎 [LIVE MODE] OI фильтр работает на полную");
 
-                            // Вернём стандартные пороги
                             filters.DynamicThresholds.MIN_STREAK = 3;
                             filters.DynamicThresholds.MIN_VOLUME_SPIKE_X = 2.2;
                             filters.DynamicThresholds.MIN_DOMINANCE = 0.62;
-
                             break;
 
                         case "train:status":
-                            System.out.println("📊 OI_TRAINING_MODE = " + Settings.OI_TRAINING_MODE);
+                            System.out.printf("📊 OI фильтр = %s | TRAIN режим = %s%n",
+                                    Settings.OI_FILTER_ENABLED ? "ВКЛ" : "ВЫКЛ",
+                                    Settings.OI_TRAIN ? "ДА" : "НЕТ");
                             break;
 
+                        // ====== Агрессор-фильтр (AdaptiveAggressor) ======
+                        case "aggr:on":
+                            Settings.AGGR_FILTER_ENABLED = true;
+                            System.out.println("✅ Агрессор-фильтр включён");
+                            break;
+
+                        case "aggr:off":
+                            Settings.AGGR_FILTER_ENABLED = false;
+                            System.out.println("⛔ Агрессор-фильтр отключён");
+                            break;
+
+                        case "aggr:train:on":
+                            Settings.AGGR_TRAIN = true;
+                            System.out.println("🟡 Агрессор-фильтр в мягком режиме (TRAIN)");
+                            break;
+
+                        case "aggr:train:off":
+                            Settings.AGGR_TRAIN = false;
+                            System.out.println("💎 Агрессор-фильтр в строгом режиме");
+                            break;
+
+                        // ====== Burst-фильтр (AggressorBurst) ======
+                        case "burst:on":
+                            Settings.BURST_FILTER_ENABLED = true;
+                            System.out.println("✅ Burst-фильтр включён");
+                            break;
+
+                        case "burst:off":
+                            Settings.BURST_FILTER_ENABLED = false;
+                            System.out.println("⛔ Burst-фильтр отключён");
+                            break;
+
+                        case "burst:train:on":
+                            Settings.BURST_TRAIN = true;
+                            System.out.println("🟡 Burst-фильтр в мягком режиме (TRAIN)");
+                            break;
+
+                        case "burst:train:off":
+                            Settings.BURST_TRAIN = false;
+                            System.out.println("💎 Burst-фильтр в строгом режиме");
+                            break;
+
+                        // ====== Показать состояние всех фильтров ======
+                        case "filters:status":
+                            System.out.printf("""
+                                            🔧 Состояние фильтров:
+                                            OI:      [%s] TRAIN=%s
+                                            Aggressor:[%s] TRAIN=%s
+                                            Burst:   [%s] TRAIN=%s
+                                            """,
+                                    Settings.OI_FILTER_ENABLED ? "ВКЛ" : "ВЫКЛ",
+                                    Settings.OI_TRAIN ? "ДА" : "НЕТ",
+                                    Settings.AGGR_FILTER_ENABLED ? "ВКЛ" : "ВЫКЛ",
+                                    Settings.AGGR_TRAIN ? "ДА" : "НЕТ",
+                                    Settings.BURST_FILTER_ENABLED ? "ВКЛ" : "ВЫКЛ",
+                                    Settings.BURST_TRAIN ? "ДА" : "НЕТ"
+                            );
+                            break;
+
+                        // ====== Помощь ======
                         case "help":
                             System.out.println("""
-                    📌 Доступные команды:
-                       stop         — остановить генерацию сигналов
-                       train:on     — включить режим обучения OI фильтра
-                       train:off    — выключить обучение, включить фильтрацию
-                       train:status — показать состояние тренировки
-                       help         — команды помощи
-                    """);
+                                    📌 Команды управления фильтрами:
+                                    
+                                    stop — остановить сигналы
+                                    
+                                    OI фильтр:
+                                      train:on / train:off   — включить/выключить TRAIN режим
+                                      train:status           — статус OI TRAIN
+                                      oi:on / oi:off         — включить / выключить OI-фильтр
+                                    
+                                    Aggressor фильтр:
+                                      aggr:on / aggr:off
+                                      aggr:train:on / aggr:train:off
+                                    
+                                    Burst фильтр:
+                                      burst:on / burst:off
+                                      burst:train:on / burst:train:off
+                                    
+                                    filters:status — показывать все статусы
+                                    """);
                             break;
 
                         default:
                             System.out.println("❓ Неизвестная команда. Напишите 'help'");
                     }
+
                 }
             }
         }, "ConsoleCommandListener").start();

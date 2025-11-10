@@ -7,10 +7,20 @@ public final class AggressorBurstFilter {
     public static boolean pass(SymbolState s, boolean isLong) {
         if (s == null || s.aggressorVolumes == null || s.aggressorDirections == null) return false;
 
-        final int MIN_STREAK = DynamicThresholds.MIN_STREAK;
-        final double MIN_VOLUME_SPIKE_X = DynamicThresholds.MIN_VOLUME_SPIKE_X;
-        final double MIN_DOMINANCE = DynamicThresholds.MIN_DOMINANCE;
-        final double MIN_ABS_VOLUME = DynamicThresholds.MIN_ABS_VOLUME_USD;
+        int    MIN_STREAK        = DynamicThresholds.MIN_STREAK;
+        double MIN_VOLUME_SPIKE_X = DynamicThresholds.MIN_VOLUME_SPIKE_X;
+        double MIN_DOMINANCE      = DynamicThresholds.MIN_DOMINANCE;
+        double MIN_ABS_VOLUME     = DynamicThresholds.MIN_ABS_VOLUME_USD;
+
+// мягкий режим (не меняем имена/сигнатуры, просто ослабляем внутри)
+        if (app.Settings.AGGRESSOR_SOFT_MODE) {
+            // -1 к требуемому стрику, на 15% ниже всплеск и доминация, на 20% ниже абсолютный объём
+            MIN_STREAK = Math.max(1, MIN_STREAK - 1);
+            MIN_VOLUME_SPIKE_X *= 0.85;
+            MIN_DOMINANCE      *= 0.85;
+            MIN_ABS_VOLUME     *= 0.80;
+        }
+
 
         if (s.aggressorVolumes.size() < MIN_STREAK || s.aggressorDirections.size() < MIN_STREAK) return false;
 

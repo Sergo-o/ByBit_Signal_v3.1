@@ -24,6 +24,9 @@ public final class Settings {
     public static final double PENALTY_ADAPTIVE = 0.15;
     public static final double PENALTY_BURST = 0.25;
 
+    // мягкий режим для агрессор-фильтров (ослабление порогов)
+    public static volatile boolean AGGRESSOR_SOFT_MODE = false;
+
 
     public static final double MICRO_OI_USD = 2_000_000; // Новый порог микро-кап
     public static final double WATCH_MIN_VOL_X = 1.05; // Новый порог для WATCH
@@ -42,6 +45,16 @@ public final class Settings {
 
     // Авто-тюнинг OI-фильтра включён/выключен
     public static boolean OI_AUTOTUNER_ENABLED = true;
+
+    // Флаги включения/выключения фильтров
+    public static volatile boolean OI_FILTER_ENABLED      = true;
+    public static volatile boolean AGGR_FILTER_ENABLED    = true;  // AdaptiveAggressorFilter
+    public static volatile boolean BURST_FILTER_ENABLED   = true;  // AggressorBurstFilter
+
+    // Мягкий режим (TRAIN) по каждому фильтру
+    public static volatile boolean OI_TRAIN      = false;
+    public static volatile boolean AGGR_TRAIN    = false;
+    public static volatile boolean BURST_TRAIN   = false;
 
 
     public static final double MIN_FLOW_FLOOR = 20_000; // Новый порог для flow

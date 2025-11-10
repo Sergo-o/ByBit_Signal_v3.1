@@ -3,62 +3,77 @@ package filters;
 import app.Settings;
 import state.SymbolState;
 
+/**
+ * OIAccelerationFilter с мягким режимом обучения:
+ * - В LIVE-режиме фильтрует по скорости/ускорению OI с учётом волатильности и микро-профиля.
+ * - В TRAIN-режиме всегда пропускает (return true), но печатает диагностическую строку (как у тебя в логах).
+ *
+ * НИ ОДНО ПОЛЕ В SymbolState НЕ ТРЕБУЕТСЯ ДОБАВЛЯТЬ.
+ */
 public final class OIAccelerationFilter {
 
-    // Базовые пороги (минимальные; ты уже сильно их снижал — тут адекватный дефолт)
-    private static final double BASE_MIN_OI_VELOCITY = 0.00010;  // 0.01%
-    private static final double BASE_MIN_OI_ACCEL     = 0.00005;  // 0.005%
+    // базовые пороги (мягкие; ты всегда можешь подкрутить их в Settings при желании)
+    private static final double BASE_MIN_OI_VELOCITY = 0.00020;  // 0.020%
+    private static final double BASE_MIN_OI_ACCEL    = 0.00010;  // 0.010%
+
+    private OIAccelerationFilter() {}
 
     public static boolean pass(SymbolState s) {
-        // Нужны хотя бы 3 точки OI
-        if (s.oiList == null || s.oiList.size() < 3) return true;
+        // нужно хотя бы 3 точки OI
+        if (s.oiList == null || s.oiList.size() < 3) {
+            return true;
+        }
 
-        // Достаём три последних значения безопасно
-        Double[] arr = s.oiList.toArray(new Double[0]);
-        double oi0 = nz(arr[arr.length - 1]);
-        double oi1 = nz(arr[arr.length - 2]);
-        double oi2 = nz(arr[arr.length - 3]);
+        // последние 3 значения (без добавления полей в SymbolState)
+        final int n = s.oiList.size();
+        Double oi0 = s.oiList.peekLast(); // текущее
+        Double oi1 = s.oiList.toArray(new Double[0])[n - 2];
+        Double oi2 = s.oiList.toArray(new Double[0])[n - 3];
+        if (oi0 == null || oi1 == null || oi2 == null) {
+            return true;
+        }
 
-        if (oi1 <= 0 || oi2 <= 0) return true;
-
-        double velPrev = (oi1 - oi2) / oi2;
-        double velNow  = (oi0 - oi1) / oi1;
+        // скорость и ускорение OI
+        double velPrev = (oi1 - oi2) / Math.max(Math.abs(oi2), 1.0);
+        double velNow  = (oi0 - oi1) / Math.max(Math.abs(oi1), 1.0);
         double accel   = velNow - velPrev;
 
-        // микропрофиль — смягчаем пороги
-        boolean isMicro = s.avgOiUsd > 0 && oi0 < Math.max(5_000_000, s.avgOiUsd * 0.75);
+        // относительный всплеск объёма (если очередь пустая — volRel = 0)
+        double volNow = (s.volumes != null && s.volumes.peekLast() != null) ? s.volumes.peekLast() : 0.0;
+        double volRel = (s.avgVolUsd > 0.0) ? (volNow / s.avgVolUsd) : 0.0;
 
-        double velThresh   = BASE_MIN_OI_VELOCITY;
-        double accelThresh = BASE_MIN_OI_ACCEL;
+        // микро-профиль (как ты используешь повсюду)
+        boolean isMicro = (s.avgOiUsd > 0.0) && (s.avgOiUsd < Settings.MICRO_OI_USD);
 
-        if (isMicro) {
-            velThresh   *= 0.7;
-            accelThresh *= 0.7;
-        }
-        // training mode — ещё мягче и подробный лог
+        // адаптация порогов: выше волатильность → пороги мягче
+        double volt = s.avgVolatility; // сглажённая волатильность/бар в твоём состоянии
+        double voltAdj = (volt > 0.0) ? clamp(1.0 / (1.0 + 30.0 * volt), 0.5, 1.0) : 1.0;
+
+        // микро-коэффициент: для микро чуть мягче
+        double microAdj = isMicro ? 0.8 : 1.0;
+
+        // итого динамические пороги
+        double minVel   = BASE_MIN_OI_VELOCITY * voltAdj * microAdj;
+        double minAccel = BASE_MIN_OI_ACCEL    * voltAdj * microAdj;
+
+        // TRAIN режим — всегда пропускаем, но печатаем диагностическую строку:
         if (Settings.OI_TRAINING_MODE) {
-            velThresh   *= 0.5;
-            accelThresh *= 0.5;
+            System.out.printf("[Filter] OIAcceler vel=%.5f (min=%.5f) accel=%.5f (min=%.5f) volRel=%.2f micro=%s oi: %.0f→%.0f%n",
+                    velNow, minVel, accel, minAccel, volRel, isMicro, oi1, oi0);
+            return true;
         }
 
-        double minVel = MIN_OI_VELOCITY;
-        double minAcc = MIN_OI_ACCEL;
+        // LIVE режим — строгая проверка:
+        boolean pass = (velNow >= minVel) && (accel >= minAccel);
 
-        if (Settings.OI_TRAINING_MODE) {
-            minVel *= Settings.TRAIN_OI_VEL_FACTOR;
-            minAcc *= Settings.TRAIN_OI_ACCEL_FACTOR;
+        if (!pass) {
+            System.out.printf("[Filter] OIAcceler vel=%.5f (min=%.5f) accel=%.5f (min=%.5f) volRel=%.2f micro=%s oi: %.0f→%.0f%n",
+                    velNow, minVel, accel, minAccel, volRel, isMicro, oi1, oi0);
         }
-
-        boolean ok = velNow >= minVel && accel >= minAcc;
-
-        if (!ok) {
-            System.out.printf(
-                    "[Filter] OIAcceler vel=%.5f (min=%.5f) accel=%.5f (min=%.5f) micro=%s oi: %.0f→%.0f%n",
-                    velNow, velThresh, accel, accelThresh, isMicro, oi1, oi0
-            );
-        }
-        return ok;
+        return pass;
     }
 
-    private static double nz(Double d) { return d == null ? 0.0 : d; }
+    private static double clamp(double v, double lo, double hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
 }
