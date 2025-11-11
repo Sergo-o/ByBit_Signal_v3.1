@@ -159,20 +159,22 @@ public class SignalStatsService {
         // CSV
         try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(csv, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
             pw.println("id,symbol,createdAtMs,stage,direction,initPrice,initScore,isMicro");
-            pw.printf("%s,%s,%d,%s,%s,%.8f,%.4f,%b%n",
+            pw.printf(Locale.US,"%s,%s,%d,%s,%s,%.8f,%.4f,%b%n",
                     r.id, r.symbol, r.createdAtMs, r.stage, r.direction, r.initPrice, r.initScore, r.isMicro);
             pw.println();
-            pw.println("snapshot_ts,price,oiNow,volNow,buyRatio,voltRel,funding,peakProfit,drawdown,note");
-
+            pw.println("timestamp,price,oi,volume,buyRatio,volatility,funding,peakProfit,drawdown,note");
             List<SignalSnapshot> copy;
             synchronized (r.snapshots) {
                 copy = new ArrayList<>(r.snapshots);
             }
             for (SignalSnapshot s : copy) {
-                pw.printf("%d,%.8f,%.2f,%.2f,%.4f,%.4f,%.8f,%.4f,%.4f,%s%n",
+                pw.printf(Locale.US,
+                        "%d,%.8f,%.2f,%.2f,%.4f,%.4f,%.8f,%.4f,%.4f,%s%n",
                         s.timestampMs, s.price, s.oiNow, s.volNow, s.buyRatio, s.voltRel, s.funding,
                         s.peakProfit, s.drawdown, sanitize(s.note));
+
             }
+
         }
     }
 

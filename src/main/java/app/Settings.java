@@ -28,7 +28,7 @@ public final class Settings {
     public static volatile boolean AGGRESSOR_SOFT_MODE = false;
 
 
-    public static final double MICRO_OI_USD = 2_000_000; // Новый порог микро-кап
+    public static final double MICRO_OI_USD = 5_000_000; // Новый порог микро-кап
     public static final double WATCH_MIN_VOL_X = 1.05; // Новый порог для WATCH
     public static final double WATCH_MIN_OI_X = 1.002; // Новый порог для WATCH
     public static final double WATCH_MIN_DELTA = 0.50; // Новый порог для WATCH
@@ -55,7 +55,6 @@ public final class Settings {
     public static volatile boolean OI_TRAIN      = false;
     public static volatile boolean AGGR_TRAIN    = false;
     public static volatile boolean BURST_TRAIN   = false;
-
 
     public static final double MIN_FLOW_FLOOR = 20_000; // Новый порог для flow
     public static final double MIN_FLOW_RATIO = 0.02; // Новый порог для flow

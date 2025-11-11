@@ -139,15 +139,9 @@ public class PumpLiquidityAnalyzer {
             if (System.currentTimeMillis() - startTime < 60_000) return Optional.empty();
 
             // ====================== OIAccelerationFilter ======================
-            if (Settings.OI_FILTER_ENABLED) {
-                boolean ok = OIAccelerationFilter.pass(s);
-                if (!ok) {
-                    DebugPrinter.printIgnore(symbol, "[Filter] OIAcceler");
-                    if (!Settings.OI_TRAIN) {
-                        return Optional.empty();
-                    }
-                    // TRAIN: пропускаем, но логируем
-                }
+            if (!OIAccelerationFilter.pass(s)) {
+                DebugPrinter.printIgnore(symbol, "[Filter] OIAcceler");
+                return Optional.empty();
             }
 
             // ====================== Базовые проверки ======================
@@ -170,14 +164,11 @@ public class PumpLiquidityAnalyzer {
             boolean isLong = buyRatio > 0.5;
 
             // ====================== AdaptiveAggressorFilter ======================
-            if (Settings.AGGR_FILTER_ENABLED) {
+            if (app.Settings.AGGR_FILTER_ENABLED) {
                 boolean ok = AdaptiveAggressorFilter.pass(s, isLong, symbol);
-                if (!ok) {
+                if (!ok && !app.Settings.AGGR_TRAIN) {
                     DebugPrinter.printIgnore(symbol, "[Filter] AdaptiveAggr");
-                    if (!Settings.AGGR_TRAIN) {
-                        return Optional.empty();
-                    }
-                    // TRAIN: логируем, но не блокируем
+                    return Optional.empty();
                 }
             }
 
@@ -192,13 +183,11 @@ public class PumpLiquidityAnalyzer {
             }
 
             // ====================== AggressorBurstFilter ======================
-            if (Settings.BURST_FILTER_ENABLED) {
+            if (app.Settings.BURST_FILTER_ENABLED) {
                 boolean ok = AggressorBurstFilter.pass(s, isLong);
-                if (!ok) {
-                    DebugPrinter.printIgnore(symbol, "[Filter] Burst");
-                    if (!Settings.BURST_TRAIN) {
-                        return Optional.empty();
-                    }
+                if (!ok && !app.Settings.BURST_TRAIN) {
+                    DebugPrinter.printIgnore(symbol, "No aggressor burst");
+                    return Optional.empty();
                 }
             }
 
