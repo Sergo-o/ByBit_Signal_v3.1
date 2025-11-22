@@ -12,6 +12,10 @@ public final class Settings {
 
     // Порог микро-кап (по OI)
 
+    // Глобовый флаг работы приложения (для мягкой остановки фоновых потоков)
+    public static volatile boolean RUNNING = true;
+
+
     // ====== WATCH / ENTER (остаются для будущего задействования) ======
     public static final double WATCH_MIN_SCORE   = 0.30;
 

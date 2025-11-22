@@ -1,5 +1,6 @@
 package net;
 
+import app.Settings;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import core.PumpLiquidityAnalyzer;
@@ -277,6 +278,7 @@ public class BybitWsClient {
     }
 
     private static void scheduleReconnectKlines(String reason) {
+        if (!app.Settings.RUNNING) return;
         if (analyzerRef == null) return;
         System.err.println("[WS Klines] reconnect in 5s (" + reason + ")");
         RECONNECT_EXEC.schedule(() -> {
@@ -289,6 +291,7 @@ public class BybitWsClient {
     }
 
     private static void scheduleReconnectTrades(String reason) {
+        if (!app.Settings.RUNNING) return;
         if (analyzerRef == null) return;
         System.err.println("[WS Trades] reconnect in 5s (" + reason + ")");
         RECONNECT_EXEC.schedule(() -> {
@@ -301,6 +304,7 @@ public class BybitWsClient {
     }
 
     private static void scheduleReconnectLiquidations(String reason) {
+        if (!app.Settings.RUNNING) return;
         if (analyzerRef == null) return;
         System.err.println("[WS Liqs] reconnect in 5s (" + reason + ")");
         RECONNECT_EXEC.schedule(() -> {
@@ -313,6 +317,7 @@ public class BybitWsClient {
     }
 
     private static void scheduleReconnectTickers(String reason) {
+        if (!app.Settings.RUNNING) return;
         System.err.println("[WS Tickers] reconnect in 5s (" + reason + ")");
         RECONNECT_EXEC.schedule(() -> {
             try {
@@ -322,5 +327,37 @@ public class BybitWsClient {
             }
         }, 5, TimeUnit.SECONDS);
     }
+
+    public static void shutdown() {
+        Settings.RUNNING = false; // на всякий, продублируем
+
+        try {
+            if (klineWS != null) {
+                klineWS.close(1000, "shutdown");
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            if (tradeWS != null) {
+                tradeWS.close(1000, "shutdown");
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            if (liquidationWS != null) {
+                liquidationWS.close(1000, "shutdown");
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            if (tickerWS != null) {
+                tickerWS.close(1000, "shutdown");
+            }
+        } catch (Exception ignored) {}
+
+        RECONNECT_EXEC.shutdownNow();
+        System.out.println("[WS] shutdown requested");
+    }
+
 
 }

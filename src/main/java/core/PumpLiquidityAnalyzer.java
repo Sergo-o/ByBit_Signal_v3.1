@@ -5,10 +5,8 @@ import filters.AggressorBurstFilter;
 import filters.AdaptiveAggressorFilter;
 import filters.OIAccelerationFilter;
 import ml.MicroNN;
-import signal.SignalStrength;
-import signal.Stage;
-import signal.TradeSignal;
-import state.SymbolState;
+import signal.*;
+import state.*;
 import stats.SignalSnapshot;
 import stats.SignalStatsService;
 import app.Settings;
@@ -217,12 +215,12 @@ public class PumpLiquidityAnalyzer {
             }
 
             // 2.4. Cooldown и минимальный разрыв между сигналами
-            if (now < s.cooldownUntil) {
+            if (now < s.getCooldownUntil()) {
                 DebugPrinter.printIgnore(symbol, "Перезарядка активна");
                 return Optional.empty();
             }
 
-            if (s.lastSignalAtMs > 0 && now - s.lastSignalAtMs < MIN_SIGNAL_GAP_MS) {
+            if (s.getLastSignalAtMs() > 0 && now - s.getLastSignalAtMs() < MIN_SIGNAL_GAP_MS) {
                 DebugPrinter.printIgnore(symbol, "Слишком частые сигналы");
                 return Optional.empty();
             }
@@ -340,11 +338,11 @@ public class PumpLiquidityAnalyzer {
             // 6. Обновляем состояние
             // ==========================
             long cooldownMs = isHeavy ? COOLDOWN_MS_HEAVY : COOLDOWN_MS_LIGHT;
-            s.cooldownUntil = now + cooldownMs;
-            s.lastSignalAtMs = now;
+            s.setCooldownUntil(now + cooldownMs);
+            s.setLastSignalAtMs(now);
 
-            s.watchStreak = 0;
-            s.enterStreak = 0;
+            s.setWatchStreak(0);
+            s.setEnterStreak(0);
 
             return Optional.of(sig);
         }

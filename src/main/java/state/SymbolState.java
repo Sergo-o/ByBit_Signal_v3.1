@@ -10,7 +10,7 @@ public class SymbolState {
     public final Deque<Double> volumes = new ArrayDeque<>();
     public final Deque<Double> oiList = new ArrayDeque<>();
 
-    public long startMs = System.currentTimeMillis();
+    private long startMs = System.currentTimeMillis();
 
 
     // === Aggressor streams (last N trades) ===
@@ -21,11 +21,11 @@ public class SymbolState {
     public double buyAgg1m = 0.0;
     public double sellAgg1m = 0.0;
 
-    public double liqBuy1m  = 0.0; // сумма ликвидаций шортов (buy pressure)
+    public double liqBuy1m = 0.0; // сумма ликвидаций шортов (buy pressure)
     public double liqSell1m = 0.0; // сумма ликвидаций лонгов (sell pressure)
 
-    public double oiVelocity  = 0.0;
-    public double oiAcceleration  = 0.0;
+    public double oiVelocity = 0.0;
+    public double oiAcceleration = 0.0;
 
     // === Liquidation EWMA ===
     public double liqLongUsd = 0.0;
@@ -45,10 +45,47 @@ public class SymbolState {
     public double avgDeltaBuy = 0.0; // если используешь дельту — оставляем
 
     // === Control ===
-    public long cooldownUntil = 0;
-    public long lastSignalAtMs = 0;
-    public int watchStreak = 0;
-    public int enterStreak = 0;
+    private long cooldownUntil = 0;
+    private long lastSignalAtMs = 0;
+
+    public void setCooldownUntil(long cooldownUntil) {
+        this.cooldownUntil = cooldownUntil;
+    }
+
+    public void setLastSignalAtMs(long lastSignalAtMs) {
+        this.lastSignalAtMs = lastSignalAtMs;
+    }
+
+    public void setWatchStreak(int watchStreak) {
+        this.watchStreak = watchStreak;
+    }
+
+    public void setEnterStreak(int enterStreak) {
+        this.enterStreak = enterStreak;
+    }
+
+    public long getStartMs() {
+        return startMs;
+    }
+
+    public long getCooldownUntil() {
+        return cooldownUntil;
+    }
+
+    public long getLastSignalAtMs() {
+        return lastSignalAtMs;
+    }
+
+    public int getWatchStreak() {
+        return watchStreak;
+    }
+
+    public int getEnterStreak() {
+        return enterStreak;
+    }
+
+    private int watchStreak = 0;
+    private int enterStreak = 0;
 
     @Override
     public String toString() {

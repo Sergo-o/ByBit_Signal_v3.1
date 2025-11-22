@@ -2,6 +2,7 @@ package filters;
 
 import app.Settings;
 import state.SymbolState;
+import tuning.AutoTuner;
 
 public final class AdaptiveAggressorFilter {
 
@@ -35,6 +36,22 @@ public final class AdaptiveAggressorFilter {
         // базовые, но умножаем на волатильность
         double minRatio = BASE_MIN_RATIO * kSoft * kMicro * (1.0 + 0.4 * volt);
         double minFlow  = avgVol * BASE_MIN_FLOW_MUL * kSoft * kMicro;
+
+        // Подмешиваем авто-тюнер агрессора (если включён)
+        if (Settings.OI_AUTOTUNER_ENABLED) {
+            AutoTuner.Profile profile =
+                    micro ? AutoTuner.Profile.MICRO : AutoTuner.Profile.GLOBAL;
+            AutoTuner.AggressorParams p = AutoTuner.getInstance().getParams(profile);
+
+            // Минимальная доминанта не ниже того, что настрогал AutoTuner
+            minRatio = Math.max(minRatio, p.minDominance);
+
+            // Дополнительно требуем минимальный абсолютный USD-поток
+            double minAbsFlow = p.minAbsVolumeUsd;
+            if (flow < minAbsFlow) {
+                return false;
+            }
+        }
 
         boolean pass = ratio >= minRatio && flow >= minFlow;
 

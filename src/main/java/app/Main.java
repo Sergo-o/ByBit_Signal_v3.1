@@ -2,6 +2,7 @@ package app;
 
 import core.MetricsProviderInit;
 import core.PumpLiquidityAnalyzer;
+import market.MarketRegimeDetector;
 import net.BybitRest;
 import net.BybitWsClient;
 import net.OiRestUpdater;
@@ -12,6 +13,7 @@ import state.SymbolState;
 import stats.SignalStatsService;
 import store.MarketDataStore;
 
+import java.nio.file.Paths;
 import java.sql.DriverManager;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,6 +33,8 @@ public class Main {
 //            stats.DatabaseInit.init(conn);
 //        }
 
+        Settings.RUNNING = true;
+
         // 1) Загружаем настройки
         try (var is = Main.class.getResourceAsStream("/settings.properties")) {
             if (is != null) {
@@ -47,6 +51,7 @@ public class Main {
 
         Map<String, SymbolState> symbols = new ConcurrentHashMap<>();
         PumpLiquidityAnalyzer analyzer = new PumpLiquidityAnalyzer(symbols);
+        final MarketRegimeDetector regimeDetector = new MarketRegimeDetector(analyzer);
         MetricsProviderInit.init(analyzer);
         SignalStatsService.setMetricsProvider(new stats.AnalyzerMetricsProvider(analyzer));
         SignalPrinter printer = new ConsoleSignalPrinter();
@@ -79,6 +84,7 @@ public class Main {
                         case "stop":
                             System.out.println("\n🛑 Команда STOP получена!");
                             System.out.println("⏸ Останавливаем генерацию новых сигналов...");
+                            app.Settings.RUNNING = false;
                             stopRequested = true;
                             return;
 
@@ -113,6 +119,7 @@ public class Main {
                             System.out.println("  OI:     enabled=" + app.Settings.OI_FILTER_ENABLED + ", train=" + app.Settings.OI_TRAIN);
                             System.out.println("  AGGR:   enabled=" + app.Settings.AGGR_FILTER_ENABLED + ", train=" + app.Settings.AGGR_TRAIN);
                             System.out.println("  BURST:  enabled=" + app.Settings.BURST_FILTER_ENABLED + ", train=" + app.Settings.BURST_TRAIN);
+                            System.out.println(regimeDetector.debugSummary());
                             break;
 
                         // ===== OIAccelerationFilter =====
@@ -236,7 +243,9 @@ public class Main {
             Thread.sleep(60_000); // анализ раз в минуту
         }
 
+        BybitWsClient.shutdown();
         SignalStatsService.getInstance().shutdown();
+        SignalStatsService.getInstance().exportAllToCsv(Paths.get("signal_exports/all_signals.csv"));
         System.out.println("🚪 Завершение программы...");
         System.exit(0);
     }

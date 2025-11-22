@@ -2,6 +2,7 @@ package filters;
 
 import state.SymbolState;
 import app.Settings;
+import tuning.AutoTuner;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -75,6 +76,17 @@ public final class OIAccelerationFilter {
         // Итоговые пороги
         double minVel  = Math.max(BASE_MIN_OI_VELOCITY, adaptVel)  * kSoft * kMicro;
         double minAcc  = Math.max(BASE_MIN_OI_ACCEL,     adaptAcc) * kSoft * kMicro;
+
+        // Подмешиваем базовые пороги из AutoTuner (если включён)
+        if (Settings.OI_AUTOTUNER_ENABLED) {
+            AutoTuner.Profile profile =
+                    isMicro ? AutoTuner.Profile.MICRO : AutoTuner.Profile.GLOBAL;
+            AutoTuner.OIParams params = AutoTuner.getInstance().getOiParams(profile);
+
+            minVel = Math.max(minVel, params.minVelBase);
+            minAcc = Math.max(minAcc, params.minAccelBase);
+        }
+
 
         // Проходим по условиям
         boolean pass = (velNow >= minVel) && (accel >= minAcc);

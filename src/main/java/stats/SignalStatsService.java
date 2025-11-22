@@ -2,6 +2,7 @@ package stats;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import tuning.AutoTuner;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -140,6 +141,22 @@ public class SignalStatsService {
 
         r.completed = true;
 
+        // === AutoTuner feedback по завершённому сигналу ===
+        if (app.Settings.OI_AUTOTUNER_ENABLED) {
+            AutoTuner.Profile profile =
+                    r.isMicro ? AutoTuner.Profile.MICRO : AutoTuner.Profile.GLOBAL;
+
+            // r.maxReturn / r.minReturn — относительные доходности (0.05 = +5%)
+            double peakPct = r.maxReturn * 100.0;
+            double ddPct = r.minReturn * 100.0;
+
+            try {
+                AutoTuner.getInstance().onSignalFinished(profile, peakPct, ddPct);
+            } catch (Exception e) {
+                System.err.println("[AutoTuner] onSignalFinished error: " + e.getMessage());
+            }
+        }
+
         if (AUTO_EXPORT_ON_COMPLETE) {
             try {
                 exportRecord(r);
@@ -149,43 +166,144 @@ public class SignalStatsService {
         }
     }
 
-    // экспорт одной записи в JSON + CSV
+
+        // экспорт одной записи в JSON + "ровный" CSV (одна строка = один снапшот)
     public void exportRecord(SignalRecord r) throws IOException {
         String baseName = r.symbol + "_" + sdf.format(new Date(r.createdAtMs));
         Path json = EXPORT_DIR.resolve(baseName + ".json");
         Path csv  = EXPORT_DIR.resolve(baseName + ".csv");
 
-        // JSON
-        try (Writer w = Files.newBufferedWriter(json, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+        // JSON — как и раньше
+        try (Writer w = Files.newBufferedWriter(json,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING)) {
             mapper.writeValue(w, r);
         }
 
-        // CSV
-        try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(csv, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
-            pw.println("id,symbol,createdAtMs,stage,direction,initPrice,initScore,isMicro");
-            pw.printf(Locale.US,"%s,%s,%d,%s,%s,%.8f,%.4f,%b%n",
-                    r.id, r.symbol, r.createdAtMs, r.stage, r.direction, r.initPrice, r.initScore, r.isMicro);
-            pw.println();
-            pw.println("timestamp,price,oi,volume,buyRatio,volatility,funding,peakProfit,drawdown,note");
+        // CSV — каждая строка = один снапшот (с метаданными сигнала)
+        try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(csv,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING))) {
+
+            // единый заголовок
+            pw.println("signalId,symbol,createdAtMs,stage,direction,initPrice,initScore,isMicro," +
+                    "snapshotTsMs,price,oiNow,volNow,buyRatio,voltRel,funding,peakProfit,drawdown,note");
+
+            // копируем снапшоты под локальную коллекцию
             List<SignalSnapshot> copy;
-            synchronized (r.snapshots) {
+            synchronized (r.snapshots) { // поле snapshots у тебя уже есть
                 copy = new ArrayList<>(r.snapshots);
             }
-            for (SignalSnapshot s : copy) {
+
+            if (copy.isEmpty()) {
+                // если вдруг нет ни одного снапшота — можно записать "пустую" строку с init-полями
                 pw.printf(Locale.US,
-                        "%d,%.8f,%.2f,%.2f,%.4f,%.4f,%.8f,%.4f,%.4f,%s%n",
-                        s.timestampMs, s.price, s.oiNow, s.volNow, s.buyRatio, s.voltRel, s.funding,
-                        s.peakProfit, s.drawdown, sanitize(s.note));
-
+                        "%s,%s,%d,%s,%s,%.8f,%.4f,%b," +  // мета сигнала
+                                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n", // пустые снапшот-поля
+                        r.id,
+                        r.symbol,
+                        r.createdAtMs,
+                        r.stage,
+                        r.direction,
+                        r.initPrice,
+                        r.initScore,
+                        r.isMicro,
+                        "", "", "", "", "", "", "", "", "", ""
+                );
+            } else {
+                for (SignalSnapshot s : copy) {
+                    pw.printf(Locale.US,
+                            "%s,%s,%d,%s,%s,%.8f,%.4f,%b," +   // мета сигнала
+                                    "%d,%.8f,%.2f,%.2f,%.4f,%.4f,%.8f,%.4f,%.4f,%s%n", // снапшот
+                            r.id,
+                            r.symbol,
+                            r.createdAtMs,
+                            r.stage,
+                            r.direction,
+                            r.initPrice,
+                            r.initScore,
+                            r.isMicro,
+                            s.timestampMs,
+                            s.price,
+                            s.oiNow,
+                            s.volNow,
+                            s.buyRatio,
+                            s.voltRel,
+                            s.funding,
+                            s.peakProfit,
+                            s.drawdown,
+                            sanitize(s.note)
+                    );
+                }
             }
-
         }
     }
+
 
     private String sanitize(String s) {
         if (s == null) return "";
         return s.replaceAll("[\\r\\n,]+", " ");
     }
+
+    // единый CSV по всем сигналам (для анализа / отправки мне)
+    public void exportAllToCsv(Path outputCsv) throws IOException {
+        try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(outputCsv,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING))) {
+
+            pw.println("signalId,symbol,createdAtMs,stage,direction,initPrice,initScore,isMicro," +
+                    "snapshotTsMs,price,oiNow,volNow,buyRatio,voltRel,funding,peakProfit,drawdown,note");
+
+            for (SignalRecord r : listAll()) { // у тебя уже есть listAll()
+                List<SignalSnapshot> copy;
+                synchronized (r.snapshots) {
+                    copy = new ArrayList<>(r.snapshots);
+                }
+
+                if (copy.isEmpty()) {
+                    pw.printf(Locale.US,
+                            "%s,%s,%d,%s,%s,%.8f,%.4f,%b," +
+                                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
+                            r.id,
+                            r.symbol,
+                            r.createdAtMs,
+                            r.stage,
+                            r.direction,
+                            r.initPrice,
+                            r.initScore,
+                            r.isMicro,
+                            "", "", "", "", "", "", "", "", "", ""
+                    );
+                } else {
+                    for (SignalSnapshot s : copy) {
+                        pw.printf(Locale.US,
+                                "%s,%s,%d,%s,%s,%.8f,%.4f,%b," +
+                                        "%d,%.8f,%.2f,%.2f,%.4f,%.4f,%.8f,%.4f,%.4f,%s%n",
+                                r.id,
+                                r.symbol,
+                                r.createdAtMs,
+                                r.stage,
+                                r.direction,
+                                r.initPrice,
+                                r.initScore,
+                                r.isMicro,
+                                s.timestampMs,
+                                s.price,
+                                s.oiNow,
+                                s.volNow,
+                                s.buyRatio,
+                                s.voltRel,
+                                s.funding,
+                                s.peakProfit,
+                                s.drawdown,
+                                sanitize(s.note)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
 
     // плановый снимок
     private class SnapshotTask implements Runnable {
