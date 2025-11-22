@@ -22,7 +22,7 @@ public class SignalStatsService {
 
     // --- configurable ---
     private final int SNAPSHOT_INTERVAL_SECONDS = 120; // 2 минуты
-    private final int SNAPSHOT_ROUNDS = 4;             // 4 снимка (~8 минут)
+    private final int SNAPSHOT_ROUNDS = 10;             // 4 снимка (~8 минут)
     private final boolean AUTO_EXPORT_ON_COMPLETE = true;
     private final Path EXPORT_DIR = Paths.get("./signal_exports");
     // ---------------------
@@ -111,7 +111,7 @@ public class SignalStatsService {
 
         // финализация после N раундов (+ небольшой запас один интервал)
         scheduler.schedule(() -> finishTracking(id),
-                (long) SNAPSHOT_INTERVAL_SECONDS * (SNAPSHOT_ROUNDS + 1),
+                (long) SNAPSHOT_INTERVAL_SECONDS * SNAPSHOT_ROUNDS,
                 TimeUnit.SECONDS);
 
         return id;

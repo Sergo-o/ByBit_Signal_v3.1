@@ -51,6 +51,12 @@ public final class Settings {
     public static volatile boolean AGGR_FILTER_ENABLED    = true;  // AdaptiveAggressorFilter
     public static volatile boolean BURST_FILTER_ENABLED   = true;  // AggressorBurstFilter
 
+    public static boolean OI_SOFT_MODE = false;
+
+    public static boolean AGGRESSOR_FILTER_ENABLED = true;
+
+    public static boolean BURST_SOFT_MODE = false;
+
     // Мягкий режим (TRAIN) по каждому фильтру
     public static volatile boolean OI_TRAIN      = false;
     public static volatile boolean AGGR_TRAIN    = false;

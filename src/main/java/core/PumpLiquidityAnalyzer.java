@@ -50,12 +50,16 @@ public class PumpLiquidityAnalyzer {
     }
 
     private static double clamp01(double x) {
-        if (x < 0) return 0; if (x > 1) return 1; return x;
+        if (x < 0) return 0;
+        if (x > 1) return 1;
+        return x;
     }
 
     // ===== входы потока =====
 
-    /** Тиковые сделки: агрессор + USD объём */
+    /**
+     * Тиковые сделки: агрессор + USD объём
+     */
     public void onTrade(String symbol, boolean isBuy, double usd) {
         SymbolState s = state.computeIfAbsent(symbol, k -> new SymbolState());
         synchronized (s) {
@@ -69,15 +73,18 @@ public class PumpLiquidityAnalyzer {
             s.avgAggressorVol = ewma(s.avgAggressorVol, usd, Settings.EWMA_ALPHA_FAST);
 
             // минутные агрегаты для buy/sell агрессора
-            if (isBuy) s.buyAgg1m += usd; else s.sellAgg1m += usd;
+            if (isBuy) s.buyAgg1m += usd;
+            else s.sellAgg1m += usd;
         }
     }
 
-    /** Минутные свечи: цена/объём/USD + OI + funding на момент закрытия бара */
+    /**
+     * Минутные свечи: цена/объём/USD + OI + funding на момент закрытия бара
+     */
     public void onKline(String symbol, double close, double volumeUsd, double oiUsd, double funding) {
         SymbolState s = state.computeIfAbsent(symbol, k -> new SymbolState());
         synchronized (s) {
-            s.lastPrice   = close;
+            s.lastPrice = close;
             s.lastFunding = funding;
 
             // цены
@@ -94,7 +101,7 @@ public class PumpLiquidityAnalyzer {
 
             // EWMA среднего объёма/мин и среднего OI
             s.avgVolUsd = ewma(s.avgVolUsd, volumeUsd, Settings.EWMA_ALPHA_SLOW);
-            s.avgOiUsd  = ewma(s.avgOiUsd,  oiUsd,    Settings.EWMA_ALPHA_SLOW);
+            s.avgOiUsd = ewma(s.avgOiUsd, oiUsd, Settings.EWMA_ALPHA_SLOW);
 
             // волатильность (|r| за бар), затем EWMA
             double volt = 0.0;
@@ -107,14 +114,16 @@ public class PumpLiquidityAnalyzer {
             s.avgVolatility = ewma(s.avgVolatility, volt, Settings.EWMA_ALPHA_SLOW);
 
             // сброс минутного «живого» потока агрессора — начинается новый бар
-            s.buyAgg1m  = 0.0;
+            s.buyAgg1m = 0.0;
             s.sellAgg1m = 0.0;
 
             // (при желании здесь же можно закрывать минутные streak'и)
         }
     }
 
-    /** Ликвидации (на Bybit: side="Buy"/"Sell"). */
+    /**
+     * Ликвидации (на Bybit: side="Buy"/"Sell").
+     */
     public void onLiquidation(String symbol, boolean longSideWasLiquidated, double usd) {
         SymbolState s = state.computeIfAbsent(symbol, k -> new SymbolState());
         synchronized (s) {
@@ -138,11 +147,6 @@ public class PumpLiquidityAnalyzer {
             if (s.closes.size() < MIN_BARS_FOR_ANALYSIS) return Optional.empty();
             if (System.currentTimeMillis() - startTime < 60_000) return Optional.empty();
 
-            // ====================== OIAccelerationFilter ======================
-            if (!OIAccelerationFilter.pass(s)) {
-                DebugPrinter.printIgnore(symbol, "[Filter] OIAcceler");
-                return Optional.empty();
-            }
 
             // ====================== Базовые проверки ======================
             double oiNow = s.oiList.getLast();
@@ -163,11 +167,35 @@ public class PumpLiquidityAnalyzer {
             double buyRatio = flow > 0 ? (s.buyAgg1m / flow) : 0.5;
             boolean isLong = buyRatio > 0.5;
 
-            // ====================== AdaptiveAggressorFilter ======================
-            if (app.Settings.AGGR_FILTER_ENABLED) {
+            // === Новый блочный расчёт силы сигнала ===
+
+            int score = 0; // основа силы
+            boolean passedAggressor = false;
+            boolean passedBurst = false;
+            boolean passedOIAccel = false;
+
+// -------------------------
+// 1. OI Acceleration Filter
+// -------------------------
+            if (Settings.OI_FILTER_ENABLED) {
+                boolean ok = OIAccelerationFilter.pass(s);
+                if (ok) {
+                    score++;
+                } else if (!Settings.OI_SOFT_MODE) {
+                    DebugPrinter.printIgnore(symbol, "[Filter] OIAcceleration");
+                    return Optional.empty();
+                }
+            }
+
+// -------------------------
+// 2. Aggressor Filter
+// -------------------------
+            if (Settings.AGGRESSOR_FILTER_ENABLED) {
                 boolean ok = AdaptiveAggressorFilter.pass(s, isLong, symbol);
-                if (!ok && !app.Settings.AGGR_TRAIN) {
-                    DebugPrinter.printIgnore(symbol, "[Filter] AdaptiveAggr");
+                if (ok) {
+                    score++;
+                } else if (!Settings.AGGRESSOR_SOFT_MODE) {
+                    DebugPrinter.printIgnore(symbol, "[Filter] AdaptiveAggressor");
                     return Optional.empty();
                 }
             }
@@ -182,64 +210,65 @@ public class PumpLiquidityAnalyzer {
                 }
             }
 
-            // ====================== AggressorBurstFilter ======================
-            if (app.Settings.BURST_FILTER_ENABLED) {
-                boolean ok = AggressorBurstFilter.pass(s, isLong);
-                if (!ok && !app.Settings.BURST_TRAIN) {
-                    DebugPrinter.printIgnore(symbol, "No aggressor burst");
+            if (MICRO_NN_ENABLED && isMicro) {
+                double p = MicroNN.predict(s, isLong);
+                if (p >= MICRO_NN_THRESHOLD) {
+                    score++;
+                } else {
+                    DebugPrinter.printIgnore(symbol,
+                            String.format("MicroNN reject p=%.2f", p));
                     return Optional.empty();
                 }
             }
 
-            // ====================== Формируем сигнал ======================
-            TradeSignal sig = new TradeSignal(
-                    symbol,
-                    Stage.ENTER,
-                    isLong ? "LONG" : "SHORT",
-                    s.lastPrice,
-                    0.0,
-                    SignalStrength.STRONG,
-                    "ENTER CONFIRMED",
-                    oiNow,
-                    flow,
-                    buyRatio,
-                    s.avgVolatility,
-                    s.lastFunding,
-                    isMicro
-            );
+// -------------------------
+// 3. Burst Filter
+// -------------------------
+                if (Settings.BURST_FILTER_ENABLED) {
+                    boolean ok = AggressorBurstFilter.pass(s, isLong);
+                    if (ok) {
+                        score++;
+                    } else if (!Settings.BURST_SOFT_MODE) {
+                        DebugPrinter.printIgnore(symbol, "[Filter] Burst");
+                        return Optional.empty();
+                    }
+                }
 
-            // === Запуск трекинга статистики ===
-            var snap = new SignalSnapshot(
-                    System.currentTimeMillis(),
-                    s.lastPrice,
-                    oiNow,
-                    flow,
-                    buyRatio,
-                    s.avgVolatility,
-                    s.lastFunding,
-                    "enter",
-                    0.0,
-                    0.0
-            );
 
-            SignalStatsService.getInstance().trackSignal(
-                    symbol,
-                    "ENTER",
-                    isLong ? "LONG" : "SHORT",
-                    s.lastPrice,
-                    1.0,
-                    isMicro,
-                    snap
-            );
+// ==========================
+// 4. Сила сигнала по score
+// ==========================
+                SignalStrength strength;
+                if (score >= 3) strength = SignalStrength.STRONG;
+                else if (score == 2) strength = SignalStrength.MEDIUM;
+                else if (score == 1) strength = SignalStrength.WEAK;
+                else {
+                    DebugPrinter.printIgnore(symbol, "Low score=" + score);
+                    return Optional.empty();
+                }
 
-            // === Хаускипинг / кулдаун ===
-            s.cooldownUntil = System.currentTimeMillis() + (isHeavy ? COOLDOWN_MS_HEAVY : COOLDOWN_MS_LIGHT);
-            s.lastSignalAtMs = System.currentTimeMillis();
-            s.watchStreak = 0;
-            s.enterStreak = 0;
 
-            return Optional.of(sig);
+// ==========================
+// 6. Собираем сигнал
+// ==========================
+                TradeSignal sig = new TradeSignal(symbol, Stage.ENTER, isLong ? "LONG" : "SHORT", s.lastPrice, score,          // <= реальный динамический score
+                        strength,       // <= динамическая сила сигнала
+                        "ENTER CONFIRMED (score=" + score + ")", oiNow, flow, buyRatio, s.avgVolatility, s.lastFunding, isMicro);
+
+// === Снапшот для статистики ===
+                SignalSnapshot snap = new SignalSnapshot(System.currentTimeMillis(), s.lastPrice, oiNow, flow, buyRatio, s.avgVolatility, s.lastFunding, "enter (score=" + score + ")", 0.0, 0.0);
+
+                SignalStatsService.getInstance().trackSignal(symbol, "ENTER", isLong ? "LONG" : "SHORT", s.lastPrice, score, isMicro, snap);
+
+// обновление состояний
+                s.cooldownUntil = System.currentTimeMillis() + (isHeavy ? COOLDOWN_MS_HEAVY : COOLDOWN_MS_LIGHT);
+                s.lastSignalAtMs = System.currentTimeMillis();
+                s.watchStreak = 0;
+                s.enterStreak = 0;
+
+                return Optional.of(sig);
+
+            }
         }
     }
 
-}
