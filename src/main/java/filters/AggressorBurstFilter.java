@@ -50,10 +50,10 @@ public final class AggressorBurstFilter {
         boolean pass = streak >= minStreak && dominance >= minSpikeMul;
 
         if (!pass) {
-            System.out.printf(
-                    "[Filter] Burst streak=%d (min=%.0f) dom=%.2f (min=%.2f) micro=%s volt=%.3f%n",
-                    streak, minStreak, dominance, minSpikeMul, micro, volt
-            );
+//            System.out.printf(
+//                    "[Filter] Burst streak=%d (min=%.0f) dom=%.2f (min=%.2f) micro=%s volt=%.3f%n",
+//                    streak, minStreak, dominance, minSpikeMul, micro, volt
+//            );
         }
 
         return pass;

@@ -9,6 +9,7 @@ import org.jetbrains.annotations.NotNull;
 import store.MarketDataStore;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class BybitWsClient {
 
@@ -20,8 +21,25 @@ public class BybitWsClient {
     private static WebSocket liquidationWS;
     private static WebSocket tickerWS;
 
+    private static PumpLiquidityAnalyzer analyzerRef;
+
     private static final String WS_URL = "wss://stream.bybit.com/v5/public/linear";
     private static long lastHeartbeat = 0;
+
+    private static final java.util.concurrent.ScheduledExecutorService RECONNECT_EXEC =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "ws-reconnect");
+                t.setDaemon(true);
+                return t;
+            });
+
+    private static void scheduleReconnectKlines(PumpLiquidityAnalyzer analyzer) {
+        RECONNECT_EXEC.schedule(
+                () -> startKlines(analyzer),
+                5,
+                java.util.concurrent.TimeUnit.SECONDS
+        );
+    }
 
     private static WebSocket connect(WebSocketListener listener) {
         Request req = new Request.Builder().url(WS_URL).build();
@@ -38,6 +56,7 @@ public class BybitWsClient {
     }
 
     public static void startKlines(PumpLiquidityAnalyzer analyzer) {
+        analyzerRef = analyzer;
         klineWS = connect(new WebSocketListener() {
             @Override public void onOpen(@NotNull WebSocket ws, @NotNull Response r) {
                 List<String> topics = MarketDataStore.allSymbols().stream().map(s -> "kline.1." + s).toList();
@@ -70,10 +89,23 @@ public class BybitWsClient {
 
                 } catch (Exception ignore) {}
             }
+            public void onFailure(@NotNull WebSocket ws, @NotNull Throwable t, Response r) {
+                System.err.println("[WS Klines Failure] " + t.getMessage());
+                klineWS = null;
+                scheduleReconnectKlines("failure");
+            }
+
+            @Override
+            public void onClosed(@NotNull WebSocket ws, int code, @NotNull String reason) {
+                System.err.println("[WS Klines Closed] " + code + " " + reason);
+                klineWS = null;
+                scheduleReconnectKlines("closed");
+            }
         });
     }
 
     public static void startTrades(PumpLiquidityAnalyzer analyzer) {
+        analyzerRef = analyzer;
         tradeWS = connect(new WebSocketListener() {
             @Override
             public void onOpen(@NotNull WebSocket ws, @NotNull Response resp) {
@@ -111,12 +143,26 @@ public class BybitWsClient {
 
                 } catch (Exception ignore) {}
             }
+            @Override
+            public void onFailure(@NotNull WebSocket ws, @NotNull Throwable t, Response r) {
+                System.err.println("[WS Trades Failure] " + t.getMessage());
+                tradeWS = null;
+                scheduleReconnectTrades("failure");
+            }
+
+            @Override
+            public void onClosed(@NotNull WebSocket ws, int code, @NotNull String reason) {
+                System.err.println("[WS Trades Closed] " + code + " " + reason);
+                tradeWS = null;
+                scheduleReconnectTrades("closed");
+            }
         });
     }
 
 
 
     public static void startLiquidations(PumpLiquidityAnalyzer analyzer) {
+        analyzerRef = analyzer;
         liquidationWS = connect(new WebSocketListener() {
             @Override public void onOpen(@NotNull WebSocket ws, @NotNull Response r) {
                 List<String> topics = MarketDataStore.allSymbols().stream().map(s -> "liquidation." + s).toList();
@@ -156,6 +202,19 @@ public class BybitWsClient {
                 }
             }
 
+            @Override
+            public void onFailure(@NotNull WebSocket ws, @NotNull Throwable t, Response r) {
+                System.err.println("[WS Liqs Failure] " + t.getMessage());
+                liquidationWS = null;
+                scheduleReconnectLiquidations("failure");
+            }
+
+            @Override
+            public void onClosed(@NotNull WebSocket ws, int code, @NotNull String reason) {
+                System.err.println("[WS Liqs Closed] " + code + " " + reason);
+                liquidationWS = null;
+                scheduleReconnectLiquidations("closed");
+            }
         });
     }
 
@@ -201,6 +260,67 @@ public class BybitWsClient {
                     System.err.println("[WS Tickers Error] " + e.getMessage());
                 }
             }
+            @Override
+            public void onFailure(@NotNull WebSocket ws, @NotNull Throwable t, Response r) {
+                System.err.println("[WS Tickers Failure] " + t.getMessage());
+                tickerWS = null;
+                scheduleReconnectTickers("failure");
+            }
+
+            @Override
+            public void onClosed(@NotNull WebSocket ws, int code, @NotNull String reason) {
+                System.err.println("[WS Tickers Closed] " + code + " " + reason);
+                tickerWS = null;
+                scheduleReconnectTickers("closed");
+            }
         });
     }
+
+    private static void scheduleReconnectKlines(String reason) {
+        if (analyzerRef == null) return;
+        System.err.println("[WS Klines] reconnect in 5s (" + reason + ")");
+        RECONNECT_EXEC.schedule(() -> {
+            try {
+                startKlines(analyzerRef);
+            } catch (Exception e) {
+                System.err.println("[WS Klines] reconnect error: " + e.getMessage());
+            }
+        }, 5, TimeUnit.SECONDS);
+    }
+
+    private static void scheduleReconnectTrades(String reason) {
+        if (analyzerRef == null) return;
+        System.err.println("[WS Trades] reconnect in 5s (" + reason + ")");
+        RECONNECT_EXEC.schedule(() -> {
+            try {
+                startTrades(analyzerRef);
+            } catch (Exception e) {
+                System.err.println("[WS Trades] reconnect error: " + e.getMessage());
+            }
+        }, 5, TimeUnit.SECONDS);
+    }
+
+    private static void scheduleReconnectLiquidations(String reason) {
+        if (analyzerRef == null) return;
+        System.err.println("[WS Liqs] reconnect in 5s (" + reason + ")");
+        RECONNECT_EXEC.schedule(() -> {
+            try {
+                startLiquidations(analyzerRef);
+            } catch (Exception e) {
+                System.err.println("[WS Liqs] reconnect error: " + e.getMessage());
+            }
+        }, 5, TimeUnit.SECONDS);
+    }
+
+    private static void scheduleReconnectTickers(String reason) {
+        System.err.println("[WS Tickers] reconnect in 5s (" + reason + ")");
+        RECONNECT_EXEC.schedule(() -> {
+            try {
+                startTickers();
+            } catch (Exception e) {
+                System.err.println("[WS Tickers] reconnect error: " + e.getMessage());
+            }
+        }, 5, TimeUnit.SECONDS);
+    }
+
 }

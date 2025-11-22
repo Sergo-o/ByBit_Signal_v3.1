@@ -46,24 +46,30 @@ public final class Settings {
     // Авто-тюнинг OI-фильтра включён/выключен
     public static boolean OI_AUTOTUNER_ENABLED = true;
 
+    public static int MAX_BAR_HISTORY = 500;
+    public static final int MIN_BAR_HISTORY = 60;
+
+    // История тиков агрессора
+    public static int MAX_TRADE_WINDOW = 64;
+
     // Флаги включения/выключения фильтров
     public static volatile boolean OI_FILTER_ENABLED      = true;
     public static volatile boolean AGGR_FILTER_ENABLED    = true;  // AdaptiveAggressorFilter
     public static volatile boolean BURST_FILTER_ENABLED   = true;  // AggressorBurstFilter
 
-    public static boolean OI_SOFT_MODE = false;
+    public static volatile boolean OI_SOFT_MODE = false;
 
-    public static boolean AGGRESSOR_FILTER_ENABLED = true;
+    public static volatile boolean AGGRESSOR_FILTER_ENABLED = true;
 
-    public static boolean BURST_SOFT_MODE = false;
+    public static volatile boolean BURST_SOFT_MODE = false;
 
     // Мягкий режим (TRAIN) по каждому фильтру
     public static volatile boolean OI_TRAIN      = false;
     public static volatile boolean AGGR_TRAIN    = false;
     public static volatile boolean BURST_TRAIN   = false;
 
-    public static final double MIN_FLOW_FLOOR = 20_000; // Новый порог для flow
-    public static final double MIN_FLOW_RATIO = 0.02; // Новый порог для flow
+    public static double MIN_FLOW_FLOOR = 20_000; // Новый порог для flow
+    public static double MIN_FLOW_RATIO = 0.02; // Новый порог для flow
 
     public static final double REGIME_MIN_SLOPE = 0.002; // Новый порог для Market Regime
     public static final double REGIME_VOL_LOW_X = 1.10; // Новый порог для Market Regime
@@ -94,15 +100,15 @@ public final class Settings {
     public static final int ENTER_PERSISTENCE = 2;
 
     // Flow
-    public static final double MIN_FLOW_USD   = 5_000;
+    public static double MIN_FLOW_USD   = 5_000;
 
     // Тайминги
-    public static final long MIN_SIGNAL_GAP_MS = 8_000;
-    public static final long COOLDOWN_MS_HEAVY = 90_000;
-    public static final long COOLDOWN_MS_LIGHT = 45_000;
+    public static long MIN_SIGNAL_GAP_MS = 8_000;
+    public static long COOLDOWN_MS_HEAVY = 90_000;
+    public static long COOLDOWN_MS_LIGHT = 45_000;
 
     // Окна и усреднения
-    public static final int WINDOW_MINUTES = 15;
+    public static int WINDOW_MINUTES = 15;
     public static final int MIN_BARS_FOR_ANALYSIS = 5;
 
     public static final double EWMA_ALPHA_FAST = 0.2;
@@ -115,8 +121,8 @@ public final class Settings {
     public static final double W_VOLT  = 0.20;
 
     // Минимальный OI по классам ликвидности
-    public static final double MIN_OI_HEAVY  = 1_000_000;
-    public static final double MIN_OI_LIGHT  = 200_000;
+    public static double MIN_OI_HEAVY  = 1_000_000;
+    public static double MIN_OI_LIGHT  = 200_000;
 
     public static final Set<String> SEED_HEAVY =
             Set.of("BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","TONUSDT","XRPUSDT");
@@ -146,5 +152,56 @@ public final class Settings {
     public static final int REGIME_WINDOW_BARS = 20;  // можно менять (20 баров ≈ 20 минут)
 
     // ====== Market Regime Detection ======
+
+    public static void loadFrom(java.util.Properties p) {
+        MIN_OI_HEAVY      = getDouble(p, "min.oi.heavy", MIN_OI_HEAVY);
+        MIN_OI_LIGHT      = getDouble(p, "min.oi.light", MIN_OI_LIGHT);
+
+        MIN_FLOW_FLOOR    = getDouble(p, "min.flow.floor", MIN_FLOW_FLOOR);
+        MIN_FLOW_RATIO    = getDouble(p, "min.flow.ratio", MIN_FLOW_RATIO);
+        MIN_FLOW_USD      = getDouble(p, "min.flow.usd", MIN_FLOW_USD);
+
+        MIN_SIGNAL_GAP_MS = getLong  (p, "min.signal.gap.ms", MIN_SIGNAL_GAP_MS);
+        COOLDOWN_MS_HEAVY = getLong  (p, "cooldown.ms.heavy", COOLDOWN_MS_HEAVY);
+        COOLDOWN_MS_LIGHT = getLong  (p, "cooldown.ms.light", COOLDOWN_MS_LIGHT);
+
+        WINDOW_MINUTES    = getInt   (p, "window.minutes", WINDOW_MINUTES);
+        MAX_BAR_HISTORY   = getInt   (p, "max.bar.history", MAX_BAR_HISTORY);
+        MAX_TRADE_WINDOW  = getInt   (p, "max.trade.window", MAX_TRADE_WINDOW);
+    }
+
+    private static double getDouble(java.util.Properties p, String key, double def) {
+        String v = p.getProperty(key);
+        if (v == null) return def;
+        try {
+            return Double.parseDouble(v);
+        } catch (NumberFormatException e) {
+            System.err.println("[Settings] bad double for " + key + ": " + v);
+            return def;
+        }
+    }
+
+    private static long getLong(java.util.Properties p, String key, long def) {
+        String v = p.getProperty(key);
+        if (v == null) return def;
+        try {
+            return Long.parseLong(v);
+        } catch (NumberFormatException e) {
+            System.err.println("[Settings] bad long for " + key + ": " + v);
+            return def;
+        }
+    }
+
+    private static int getInt(java.util.Properties p, String key, int def) {
+        String v = p.getProperty(key);
+        if (v == null) return def;
+        try {
+            return Integer.parseInt(v);
+        } catch (NumberFormatException e) {
+            System.err.println("[Settings] bad int for " + key + ": " + v);
+            return def;
+        }
+    }
+
 
 }

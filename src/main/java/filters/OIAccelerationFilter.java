@@ -86,10 +86,10 @@ public final class OIAccelerationFilter {
         if (lastVol != null && s.avgVolUsd > 0) volRel = lastVol / s.avgVolUsd;
 
         if (!pass) {
-            System.out.printf(
-                    "[Filter] OIAcceler vel=%.5f (min=%.5f) accel=%.5f (min=%.5f) volRel=%.2f micro=%s oi: %.0f→%.0f%n",
-                    velNow, minVel, accel, minAcc, volRel, isMicro, prev1, last
-            );
+//            System.out.printf(
+//                    "[Filter] OIAcceler vel=%.5f (min=%.5f) accel=%.5f (min=%.5f) volRel=%.2f micro=%s oi: %.0f→%.0f%n",
+//                    velNow, minVel, accel, minAcc, volRel, isMicro, prev1, last
+//            );
         }
         return pass;
     }

@@ -31,6 +31,20 @@ public class Main {
 //            stats.DatabaseInit.init(conn);
 //        }
 
+        // 1) Загружаем настройки
+        try (var is = Main.class.getResourceAsStream("/settings.properties")) {
+            if (is != null) {
+                var props = new java.util.Properties();
+                props.load(is);
+                Settings.loadFrom(props);
+                System.out.println("✅ settings.properties загружен");
+            } else {
+                System.out.println("⚠ settings.properties не найден, используются значения по умолчанию");
+            }
+        } catch (Exception e) {
+            System.err.println("⚠ Не удалось загрузить settings.properties: " + e.getMessage());
+        }
+
         Map<String, SymbolState> symbols = new ConcurrentHashMap<>();
         PumpLiquidityAnalyzer analyzer = new PumpLiquidityAnalyzer(symbols);
         MetricsProviderInit.init(analyzer);
@@ -222,6 +236,7 @@ public class Main {
             Thread.sleep(60_000); // анализ раз в минуту
         }
 
+        SignalStatsService.getInstance().shutdown();
         System.out.println("🚪 Завершение программы...");
         System.exit(0);
     }

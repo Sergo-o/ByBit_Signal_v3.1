@@ -39,10 +39,10 @@ public final class AdaptiveAggressorFilter {
         boolean pass = ratio >= minRatio && flow >= minFlow;
 
         if (!pass) {
-            System.out.printf(
-                    "[Filter] AdaptiveAggr ratio=%.2f (min=%.2f) flow=%.0f (min=%.0f) micro=%s volt=%.4f%n",
-                    ratio, minRatio, flow, minFlow, micro, volt
-            );
+//            System.out.printf(
+//                    "[Filter] AdaptiveAggr ratio=%.2f (min=%.2f) flow=%.0f (min=%.0f) micro=%s volt=%.4f%n",
+//                    ratio, minRatio, flow, minFlow, micro, volt
+//            );
         }
         return pass;
     }

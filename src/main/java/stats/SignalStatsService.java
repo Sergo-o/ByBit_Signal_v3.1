@@ -84,6 +84,10 @@ public class SignalStatsService {
         return records.values().stream().allMatch(r -> r.completed);
     }
 
+    public void shutdown() {
+        scheduler.shutdown();
+    }
+
     // === Основной метод: создать запись и запланировать автоснимки ===
     public String trackSignal(String symbol,
                               String stage,

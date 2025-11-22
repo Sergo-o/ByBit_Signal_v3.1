@@ -66,8 +66,13 @@ public class PumpLiquidityAnalyzer {
             // очередь направлений/объёмов агрессора
             s.aggressorDirections.addLast(isBuy);
             s.aggressorVolumes.addLast(usd);
-            if (s.aggressorDirections.size() > 64) s.aggressorDirections.removeFirst();
-            if (s.aggressorVolumes.size() > 64) s.aggressorVolumes.removeFirst();
+
+            while (s.aggressorDirections.size() > Settings.MAX_TRADE_WINDOW) {
+                s.aggressorDirections.removeFirst();
+            }
+            while (s.aggressorVolumes.size() > Settings.MAX_TRADE_WINDOW) {
+                s.aggressorVolumes.removeFirst();
+            }
 
             // средний тиковый объём агрессора
             s.avgAggressorVol = ewma(s.avgAggressorVol, usd, Settings.EWMA_ALPHA_FAST);
@@ -89,15 +94,20 @@ public class PumpLiquidityAnalyzer {
 
             // цены
             s.closes.addLast(close);
-            if (s.closes.size() > Math.max(Settings.WINDOW_MINUTES, 60)) s.closes.removeFirst();
+            while (s.closes.size() > Math.min(Settings.MAX_BAR_HISTORY,
+                    Math.max(Settings.WINDOW_MINUTES, Settings.MIN_BAR_HISTORY))) {
+                s.closes.removeFirst();
+            }
 
-            // объём (USD)
             s.volumes.addLast(volumeUsd);
-            if (s.volumes.size() > Settings.WINDOW_MINUTES) s.volumes.removeFirst();
+            while (s.volumes.size() > Math.min(Settings.MAX_BAR_HISTORY, Settings.WINDOW_MINUTES)) {
+                s.volumes.removeFirst();
+            }
 
-            // OI (USD)
             s.oiList.addLast(oiUsd);
-            if (s.oiList.size() > Settings.WINDOW_MINUTES) s.oiList.removeFirst();
+            while (s.oiList.size() > Math.min(Settings.MAX_BAR_HISTORY, Settings.WINDOW_MINUTES)) {
+                s.oiList.removeFirst();
+            }
 
             // EWMA среднего объёма/мин и среднего OI
             s.avgVolUsd = ewma(s.avgVolUsd, volumeUsd, Settings.EWMA_ALPHA_SLOW);
@@ -144,131 +154,201 @@ public class PumpLiquidityAnalyzer {
         if (s == null) return Optional.empty();
 
         synchronized (s) {
-            if (s.closes.size() < MIN_BARS_FOR_ANALYSIS) return Optional.empty();
-            if (System.currentTimeMillis() - startTime < 60_000) return Optional.empty();
+            long now = System.currentTimeMillis();
 
+            // =========================
+            // 0. Минимальные условия
+            // =========================
+            if (s.closes.size() < MIN_BARS_FOR_ANALYSIS) {
+                return Optional.empty();
+            }
+            // небольшой прогрев всего анализатора
+            if (now - startTime < 60_000L) {
+                return Optional.empty();
+            }
 
-            // ====================== Базовые проверки ======================
-            double oiNow = s.oiList.getLast();
+            // =========================
+            // 1. Базовые метрики по монете
+            // =========================
+            double oiNow   = s.oiList.getLast();
+            double volNow  = s.volumes.getLast();
+            double flow    = s.buyAgg1m + s.sellAgg1m;
+
+            double avgVol  = s.avgVolUsd;
+            double avgOi   = s.avgOiUsd;
+            double volRel  = avgVol > 0 ? volNow / avgVol : 0.0;
+            double oiRel   = avgOi  > 0 ? oiNow  / avgOi  : 0.0;
+
+            double buyRatio;
+            if (flow > 0.0) {
+                buyRatio = s.buyAgg1m / flow;
+            } else {
+                buyRatio = 0.5;
+            }
+
+            boolean isLong  = buyRatio > 0.5;
             boolean isHeavy = SEED_HEAVY.contains(symbol) || s.avgVolUsd >= 5_000_000;
+            boolean isMicro = oiNow < MICRO_OI_USD;
+
+            // ======================
+            // 2. Базовые фильтры
+            // ======================
+
+            // 2.1. OI по профилю
             double minOi = isHeavy ? MIN_OI_HEAVY : MIN_OI_LIGHT;
             if (oiNow < minOi) {
-                DebugPrinter.printIgnore(symbol, "Low OI: " + (long) oiNow);
+                DebugPrinter.printIgnore(symbol, "Низкий OI: " + (long) oiNow);
                 return Optional.empty();
             }
 
-            double flow = s.buyAgg1m + s.sellAgg1m;
-            double minFlow = Math.max(MIN_FLOW_FLOOR, s.avgVolUsd * MIN_FLOW_RATIO);
+            // 2.2. Поток агрессора
+            double minFlow = Math.max(MIN_FLOW_FLOOR, avgVol * MIN_FLOW_RATIO);
             if (flow < minFlow) {
-                DebugPrinter.printIgnore(symbol, "Low flow: " + (long) flow);
+                DebugPrinter.printIgnore(symbol, "Низкий расход: " + (long) flow);
                 return Optional.empty();
             }
 
-            double buyRatio = flow > 0 ? (s.buyAgg1m / flow) : 0.5;
-            boolean isLong = buyRatio > 0.5;
+            // 2.3. Направление потока (слишком нейтральное направление)
+            double dirOffset = Math.abs(buyRatio - 0.5); // 0 = нейтрально, 0.5 = чистый one-side
+            if (dirOffset < MIN_FLOW_RATIO) {
+                DebugPrinter.printIgnore(symbol,
+                        String.format("Слабое направление, buyRatio=%.2f", buyRatio));
+                return Optional.empty();
+            }
 
-            // === Новый блочный расчёт силы сигнала ===
+            // 2.4. Cooldown и минимальный разрыв между сигналами
+            if (now < s.cooldownUntil) {
+                DebugPrinter.printIgnore(symbol, "Перезарядка активна");
+                return Optional.empty();
+            }
 
-            int score = 0; // основа силы
-            boolean passedAggressor = false;
-            boolean passedBurst = false;
-            boolean passedOIAccel = false;
+            if (s.lastSignalAtMs > 0 && now - s.lastSignalAtMs < MIN_SIGNAL_GAP_MS) {
+                DebugPrinter.printIgnore(symbol, "Слишком частые сигналы");
+                return Optional.empty();
+            }
 
-// -------------------------
-// 1. OI Acceleration Filter
-// -------------------------
-            if (Settings.OI_FILTER_ENABLED) {
+            // =========================
+            // 3. Фильтры со score
+            // =========================
+            int score = 0;
+
+            // -------------------------
+            // 3.1. OI Acceleration Filter
+            // -------------------------
+            if (OI_FILTER_ENABLED) {
                 boolean ok = OIAccelerationFilter.pass(s);
                 if (ok) {
                     score++;
-                } else if (!Settings.OI_SOFT_MODE) {
-                    DebugPrinter.printIgnore(symbol, "[Filter] OIAcceleration");
+                } else if (!OI_SOFT_MODE && !OI_TRAINING_MODE) {
+//                    DebugPrinter.printIgnore(symbol, "[Filter] OIAcceleration");
                     return Optional.empty();
                 }
+                // если OI_SOFT_MODE или OI_TRAINING_MODE — можем не выкидывать, а просто не добавлять score
             }
 
-// -------------------------
-// 2. Aggressor Filter
-// -------------------------
-            if (Settings.AGGRESSOR_FILTER_ENABLED) {
+            // -------------------------
+            // 3.2. Aggressor Filter
+            // -------------------------
+            if (AGGRESSOR_FILTER_ENABLED) {
                 boolean ok = AdaptiveAggressorFilter.pass(s, isLong, symbol);
                 if (ok) {
                     score++;
-                } else if (!Settings.AGGRESSOR_SOFT_MODE) {
-                    DebugPrinter.printIgnore(symbol, "[Filter] AdaptiveAggressor");
+                } else if (!AGGRESSOR_SOFT_MODE) {
+//                    DebugPrinter.printIgnore(symbol, "[Filter] AdaptiveAggressor");
                     return Optional.empty();
                 }
             }
 
-            // ====================== Micro-модель ======================
-            boolean isMicro = oiNow < MICRO_OI_USD;
+            // -------------------------
+            // 3.3. MicroNN (только для микро-кап)
+            // -------------------------
             if (MICRO_NN_ENABLED && isMicro) {
                 double p = MicroNN.predict(s, isLong);
                 if (p < MICRO_NN_THRESHOLD) {
-                    DebugPrinter.printIgnore(symbol, String.format("MicroNN reject p=%.2f", p));
+//                    DebugPrinter.printIgnore(symbol,
+//                            String.format("MicroNN reject p=%.2f", p));
                     return Optional.empty();
                 }
+                // по желанию можно добавить: score++;
             }
 
-            if (MICRO_NN_ENABLED && isMicro) {
-                double p = MicroNN.predict(s, isLong);
-                if (p >= MICRO_NN_THRESHOLD) {
+            // -------------------------
+            // 3.4. Burst Filter
+            // -------------------------
+            if (BURST_FILTER_ENABLED) {
+                boolean ok = AggressorBurstFilter.pass(s, isLong);
+                if (ok) {
                     score++;
-                } else {
-                    DebugPrinter.printIgnore(symbol,
-                            String.format("MicroNN reject p=%.2f", p));
+                } else if (!BURST_SOFT_MODE) {
+//                    DebugPrinter.printIgnore(symbol, "[Filter] Burst");
                     return Optional.empty();
                 }
             }
 
-// -------------------------
-// 3. Burst Filter
-// -------------------------
-                if (Settings.BURST_FILTER_ENABLED) {
-                    boolean ok = AggressorBurstFilter.pass(s, isLong);
-                    if (ok) {
-                        score++;
-                    } else if (!Settings.BURST_SOFT_MODE) {
-                        DebugPrinter.printIgnore(symbol, "[Filter] Burst");
-                        return Optional.empty();
-                    }
-                }
-
-
-// ==========================
-// 4. Сила сигнала по score
-// ==========================
-                SignalStrength strength;
-                if (score >= 3) strength = SignalStrength.STRONG;
-                else if (score == 2) strength = SignalStrength.MEDIUM;
-                else if (score == 1) strength = SignalStrength.WEAK;
-                else {
-                    DebugPrinter.printIgnore(symbol, "Low score=" + score);
-                    return Optional.empty();
-                }
-
-
-// ==========================
-// 6. Собираем сигнал
-// ==========================
-                TradeSignal sig = new TradeSignal(symbol, Stage.ENTER, isLong ? "LONG" : "SHORT", s.lastPrice, score,          // <= реальный динамический score
-                        strength,       // <= динамическая сила сигнала
-                        "ENTER CONFIRMED (score=" + score + ")", oiNow, flow, buyRatio, s.avgVolatility, s.lastFunding, isMicro);
-
-// === Снапшот для статистики ===
-                SignalSnapshot snap = new SignalSnapshot(System.currentTimeMillis(), s.lastPrice, oiNow, flow, buyRatio, s.avgVolatility, s.lastFunding, "enter (score=" + score + ")", 0.0, 0.0);
-
-                SignalStatsService.getInstance().trackSignal(symbol, "ENTER", isLong ? "LONG" : "SHORT", s.lastPrice, score, isMicro, snap);
-
-// обновление состояний
-                s.cooldownUntil = System.currentTimeMillis() + (isHeavy ? COOLDOWN_MS_HEAVY : COOLDOWN_MS_LIGHT);
-                s.lastSignalAtMs = System.currentTimeMillis();
-                s.watchStreak = 0;
-                s.enterStreak = 0;
-
-                return Optional.of(sig);
-
+            // ==========================
+            // 4. Сила сигнала по score
+            // ==========================
+            SignalStrength strength;
+            if (score >= 3) {
+                strength = SignalStrength.STRONG;
+            } else if (score == 2) {
+                strength = SignalStrength.MEDIUM;
+            } else if (score == 1) {
+                strength = SignalStrength.WEAK;
+            } else {
+                DebugPrinter.printIgnore(symbol, "Низкая оценка =" + score);
+                return Optional.empty();
             }
+
+            // ==========================
+            // 5. Собираем сигнал
+            // ==========================
+
+            TradeSignal sig = new TradeSignal(
+                    symbol,
+                    Stage.ENTER,                       // если у тебя другой Stage — подставь
+                    isLong ? "LONG" : "SHORT",
+                    s.lastPrice,
+                    score,
+                    strength,
+                    "ENTER (score=" + score + ")",
+                    oiNow,
+                    flow,
+                    buyRatio,
+                    s.avgVolatility,
+                    s.lastFunding,
+                    isMicro
+            );
+
+            // === Снапшот для статистики ===
+            SignalSnapshot snap = new SignalSnapshot(
+                    now,
+                    s.lastPrice,
+                    oiNow,
+                    flow,
+                    buyRatio,
+                    s.avgVolatility,
+                    s.lastFunding,
+                    "enter (score=" + score + ")",
+                    0.0,
+                    0.0
+            );
+
+            SignalStatsService.getInstance().trackSignal(symbol, "ENTER", isLong ? "LONG" : "SHORT", s.lastPrice, score, isMicro, snap);
+
+            // ==========================
+            // 6. Обновляем состояние
+            // ==========================
+            long cooldownMs = isHeavy ? COOLDOWN_MS_HEAVY : COOLDOWN_MS_LIGHT;
+            s.cooldownUntil = now + cooldownMs;
+            s.lastSignalAtMs = now;
+
+            s.watchStreak = 0;
+            s.enterStreak = 0;
+
+            return Optional.of(sig);
         }
     }
+
+}
 
