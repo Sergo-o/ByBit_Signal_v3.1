@@ -21,6 +21,9 @@ public class OiRestUpdater {
     private static final long MAX_INTERVAL_MS  = 5 * 60_000L;  // потолок паузы
     private static final int  MAX_RETRIES_PER_CYCLE = 2;       // попыток внутри updateOnce
 
+    // 🔴 НОВОЕ: максимум подряд неудачных циклов, после которых глушим апдейтер
+    private static final int  MAX_FAILS = 20;
+
     private static int lastOiUpdateCount = -1;
 
     public static void start() {
@@ -33,12 +36,19 @@ public class OiRestUpdater {
                 boolean success = updateOnce();
 
                 if (success) {
-                    // успех — сброс backoff
+                    // Успех → сбрасываем backoff
                     consecutiveFailures = 0;
                     currentInterval = BASE_INTERVAL_MS;
                 } else {
-                    // ошибка — растём экспоненциально
+                    // Ошибка → считаем подряд и при необходимости отключаем апдейтер
                     consecutiveFailures++;
+
+                    if (consecutiveFailures > MAX_FAILS) {
+                        System.err.println("[OI] too many failures in a row (" + consecutiveFailures +
+                                "), OI updater disabled until restart");
+                        break; // выходим из while → поток завершится
+                    }
+
                     long factor = Math.min(consecutiveFailures, 5);
                     long backoff = BASE_INTERVAL_MS * (1L << factor);
                     currentInterval = Math.min(backoff, MAX_INTERVAL_MS);
@@ -51,19 +61,20 @@ public class OiRestUpdater {
                 long sleepMs = currentInterval - elapsed;
                 if (sleepMs < 1_000L) sleepMs = 1_000L;
 
-                // небольшой рандом, чтобы не попадать в одинаковый момент
+                // небольшой джиттер
                 sleepMs += ThreadLocalRandom.current().nextLong(0, 1_000L);
 
                 try { Thread.sleep(sleepMs); }
                 catch (InterruptedException ignored) {}
             }
 
-            System.out.println("[OI] updater stopped (RUNNING=false)");
+            System.out.println("[OI] updater stopped (RUNNING=false or MAX_FAILS reached)");
         }, "oi-rest-updater");
 
         t.setDaemon(true);
         t.start();
     }
+
 
     /**
      * Один цикл обновления.

@@ -47,8 +47,16 @@ public final class Settings {
     public static final double AGGR_DOM_BONUS = 0.08; // Новый порог для агрессора
     public static final double AGGR_MIN_USD = 30_000; // Новый порог для агрессора
 
-    // Авто-тюнинг OI-фильтра включён/выключен
-    public static boolean OI_AUTOTUNER_ENABLED = true;
+    // Минимальная доминанта агрессора (доля покупок/продаж)
+    // LONG: доля покупок, SHORT: доля продаж
+    public static double AGGR_MIN_RATIO_LONG        = 0.65;
+    public static double AGGR_MIN_RATIO_LONG_MICRO  = 0.70;
+    public static double AGGR_MIN_RATIO_SHORT       = 0.65;
+    public static double AGGR_MIN_RATIO_SHORT_MICRO = 0.70;
+
+
+    // Авто-тюнинг включён/выключен
+    public static boolean AUTOTUNER_ENABLED = true;
 
     public static int MAX_BAR_HISTORY = 500;
     public static final int MIN_BAR_HISTORY = 60;
@@ -157,7 +165,7 @@ public final class Settings {
 
     // ====== Market Regime Detection ======
 
-    public static void loadFrom(java.util.Properties p) {
+    static void loadFrom(java.util.Properties p) {
         MIN_OI_HEAVY      = getDouble(p, "min.oi.heavy", MIN_OI_HEAVY);
         MIN_OI_LIGHT      = getDouble(p, "min.oi.light", MIN_OI_LIGHT);
 
@@ -172,7 +180,14 @@ public final class Settings {
         WINDOW_MINUTES    = getInt   (p, "window.minutes", WINDOW_MINUTES);
         MAX_BAR_HISTORY   = getInt   (p, "max.bar.history", MAX_BAR_HISTORY);
         MAX_TRADE_WINDOW  = getInt   (p, "max.trade.window", MAX_TRADE_WINDOW);
+
+        // === Новые пороги агрессора ===
+        AGGR_MIN_RATIO_LONG        = getDouble(p, "aggr.min.ratio.long",        AGGR_MIN_RATIO_LONG);
+        AGGR_MIN_RATIO_LONG_MICRO  = getDouble(p, "aggr.min.ratio.long.micro",  AGGR_MIN_RATIO_LONG_MICRO);
+        AGGR_MIN_RATIO_SHORT       = getDouble(p, "aggr.min.ratio.short",       AGGR_MIN_RATIO_SHORT);
+        AGGR_MIN_RATIO_SHORT_MICRO = getDouble(p, "aggr.min.ratio.short.micro", AGGR_MIN_RATIO_SHORT_MICRO);
     }
+
 
     private static double getDouble(java.util.Properties p, String key, double def) {
         String v = p.getProperty(key);

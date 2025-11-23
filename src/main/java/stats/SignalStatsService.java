@@ -142,7 +142,7 @@ public class SignalStatsService {
         r.completed = true;
 
         // === AutoTuner feedback по завершённому сигналу ===
-        if (app.Settings.OI_AUTOTUNER_ENABLED) {
+        if (app.Settings.AUTOTUNER_ENABLED) {
             AutoTuner.Profile profile =
                     r.isMicro ? AutoTuner.Profile.MICRO : AutoTuner.Profile.GLOBAL;
 

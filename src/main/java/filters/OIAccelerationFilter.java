@@ -78,7 +78,7 @@ public final class OIAccelerationFilter {
         double minAcc  = Math.max(BASE_MIN_OI_ACCEL,     adaptAcc) * kSoft * kMicro;
 
         // Подмешиваем базовые пороги из AutoTuner (если включён)
-        if (Settings.OI_AUTOTUNER_ENABLED) {
+        if (Settings.AUTOTUNER_ENABLED) {
             AutoTuner.Profile profile =
                     isMicro ? AutoTuner.Profile.MICRO : AutoTuner.Profile.GLOBAL;
             AutoTuner.OIParams params = AutoTuner.getInstance().getOiParams(profile);

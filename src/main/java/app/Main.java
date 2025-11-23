@@ -66,7 +66,7 @@ public class Main {
 
         BybitWsClient.startKlines(analyzer);
         BybitWsClient.startTrades(analyzer);
-        BybitWsClient.startLiquidations(analyzer);
+//        BybitWsClient.startLiquidations(analyzer);
 
         System.out.println("Монет получено: " + MarketDataStore.allSymbols().size());
         System.out.println("✅ WebSocket подключены");

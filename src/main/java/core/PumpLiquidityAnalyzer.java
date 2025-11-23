@@ -274,7 +274,7 @@ public class PumpLiquidityAnalyzer {
             // 3.4. Burst Filter
             // -------------------------
             if (BURST_FILTER_ENABLED) {
-                boolean ok = AggressorBurstFilter.pass(s, isLong);
+                boolean ok = AggressorBurstFilter.pass(s, isLong, symbol);
                 if (ok) {
                     score++;
                 } else if (!BURST_SOFT_MODE) {

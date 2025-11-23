@@ -13,6 +13,10 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class BybitWsClient {
+    private static int liqFailCount = 0;
+    private static long liqReconnectDelayMs = 5_000L;
+    private static final long LIQ_RECONNECT_DELAY_MAX_MS = 60_000L;
+    private static final int  LIQ_FAIL_MAX = 20; // после 20 подряд падений просто отключаемся
 
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final OkHttpClient client = new OkHttpClient();
@@ -171,6 +175,8 @@ public class BybitWsClient {
                     subscribe(ws, topics.subList(i, Math.min(i + 200, topics.size())));
                 }
                 System.out.println("✅ WS liquidations subscribed (" + topics.size() + ")");
+                liqFailCount = 0;
+                liqReconnectDelayMs = 5_000L;
             }
 
             @Override
@@ -205,7 +211,13 @@ public class BybitWsClient {
 
             @Override
             public void onFailure(@NotNull WebSocket ws, @NotNull Throwable t, Response r) {
-                System.err.println("[WS Liqs Failure] " + t.getMessage());
+                String reason = (t.getMessage() != null ? t.getMessage() : "<no message>");
+                String type   = t.getClass().getSimpleName();
+                String http   = (r != null ? (r.code() + " " + r.message()) : "no HTTP response");
+
+                System.err.println("[WS Liqs Failure] " + type + " | " + http + " | " + reason);
+                t.printStackTrace(); // можно временно оставить, потом выключить
+
                 liquidationWS = null;
                 scheduleReconnectLiquidations("failure");
             }
@@ -305,15 +317,25 @@ public class BybitWsClient {
 
     private static void scheduleReconnectLiquidations(String reason) {
         if (!app.Settings.RUNNING) return;
-        if (analyzerRef == null) return;
-        System.err.println("[WS Liqs] reconnect in 5s (" + reason + ")");
+
+        liqFailCount++;
+        if (liqFailCount > LIQ_FAIL_MAX) {
+            System.err.println("[WS Liqs] disabled after " + liqFailCount + " failures");
+            return;
+        }
+
+        long delay = liqReconnectDelayMs;
+        liqReconnectDelayMs = Math.min(liqReconnectDelayMs * 2, LIQ_RECONNECT_DELAY_MAX_MS);
+
+        System.err.println("[WS Liqs] reconnect in " + delay + " ms (" + reason + "), fail# " + liqFailCount);
+
         RECONNECT_EXEC.schedule(() -> {
             try {
                 startLiquidations(analyzerRef);
             } catch (Exception e) {
                 System.err.println("[WS Liqs] reconnect error: " + e.getMessage());
             }
-        }, 5, TimeUnit.SECONDS);
+        }, delay, TimeUnit.MILLISECONDS);
     }
 
     private static void scheduleReconnectTickers(String reason) {
