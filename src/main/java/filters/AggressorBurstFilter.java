@@ -125,7 +125,7 @@ public final class AggressorBurstFilter {
 
         if (!pass && Settings.OI_FILTER_LOG_ENABLED) {
             String msg = String.format(
-                    "streak=%d (min=%d) spike=%.2f (min=%.2f) dom=%.2f (min=%.2f) vol=%.0f (min=%.0f) micro=%s volt=%.3f%n",
+                    "streak=%d (min=%d) spike=%.2f (min=%.2f) dom=%.2f (min=%.2f) vol=%.0f (min=%.0f) micro=%s volt=%.3f",
                     streak, minStreak,
                     spikeMul, minSpikeMul,
                     domRatio, minDom,

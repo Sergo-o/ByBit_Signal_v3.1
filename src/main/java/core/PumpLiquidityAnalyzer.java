@@ -4,6 +4,7 @@ import debug.DebugPrinter;
 import filters.AggressorBurstFilter;
 import filters.AdaptiveAggressorFilter;
 import filters.OIAccelerationFilter;
+import log.FilterLog;
 import ml.MicroNN;
 import signal.*;
 import state.*;
@@ -195,16 +196,40 @@ public class PumpLiquidityAnalyzer {
             // 2.1. OI по профилю
             double minOi = isHeavy ? MIN_OI_HEAVY : MIN_OI_LIGHT;
             if (oiNow < minOi) {
-                DebugPrinter.printIgnore(symbol, "Низкий OI: " + (long) oiNow);
+                String reason = String.format(
+                        "Низкий OI: %d (min=%.0f, heavy=%s, micro=%s)",
+                        (long) oiNow, minOi, isHeavy, isMicro
+                );
+                DebugPrinter.printIgnore(symbol, reason);
+                FilterLog.logIgnore(symbol, reason);
                 return Optional.empty();
             }
 
+
             // 2.2. Поток агрессора
-            double minFlow = Math.max(MIN_FLOW_FLOOR, avgVol * MIN_FLOW_RATIO);
+            double minFlowBase = Math.max(MIN_FLOW_FLOOR, avgVol * MIN_FLOW_RATIO);
+            double minFlow = minFlowBase;
+
+            // Для heavy-монет можно быть мягче по расходу:
+            // они сами по себе ликвидные, даже если текущая минута чуть тише
+            if (isHeavy) {
+                minFlow = minFlowBase * 0.5;    // 50% от базового порога
+            }
+            // Для микро-кап — наоборот, чуть жестче
+            else if (isMicro) {
+                minFlow = minFlowBase * 1.2;    // +20% к порогу
+            }
+
             if (flow < minFlow) {
-                DebugPrinter.printIgnore(symbol, "Низкий расход: " + (long) flow);
+                String reason = String.format(
+                        "Низкий расход: %d (min=%.0f, avgVol=%.0f, heavy=%s, micro=%s)",
+                        (long) flow, minFlow, avgVol, isHeavy, isMicro
+                );
+                DebugPrinter.printIgnore(symbol, reason);
+                FilterLog.logIgnore(symbol, reason);
                 return Optional.empty();
             }
+
 
             // 2.3. Направление потока (слишком нейтральное направление)
             double dirOffset = Math.abs(buyRatio - 0.5); // 0 = нейтрально, 0.5 = чистый one-side
