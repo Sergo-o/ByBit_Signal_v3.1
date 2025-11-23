@@ -2,6 +2,7 @@ package debug;
 
 import app.Settings;
 import core.PumpLiquidityAnalyzer;
+import log.FilterLog;
 import state.SymbolState;
 
 import java.util.Deque;
@@ -40,7 +41,7 @@ public class DebugPrinter {
 
     public static void printIgnore(String symbol, String reason) {
         if (!isDebugCoin(symbol)) return;
-        System.out.printf("[IGNORE] %s — %s%n", symbol, reason);
+        FilterLog.logIgnore(symbol, reason);
     }
 
     public static void monitor(String symbol, SymbolState s, double score) {

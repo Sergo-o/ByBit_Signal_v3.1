@@ -234,7 +234,7 @@ public class PumpLiquidityAnalyzer {
             // 3.1. OI Acceleration Filter
             // -------------------------
             if (OI_FILTER_ENABLED) {
-                boolean ok = OIAccelerationFilter.pass(s);
+                boolean ok = OIAccelerationFilter.pass(s,symbol);
                 if (ok) {
                     score++;
                 } else if (!OI_SOFT_MODE && !OI_TRAINING_MODE) {

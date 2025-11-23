@@ -45,7 +45,8 @@ public final class Settings {
 
     public static final double AGGR_FLOW_X = 1.20; // Новый порог для агрессора
     public static final double AGGR_DOM_BONUS = 0.08; // Новый порог для агрессора
-    public static final double AGGR_MIN_USD = 30_000; // Новый порог для агрессора
+    public static double AGGR_MIN_USD = 15_000; // Новый порог для агрессора
+    public static double AGGR_MAX_FLOW_USD = 120_000; // новый "потолок" для min flow
 
     // Минимальная доминанта агрессора (доля покупок/продаж)
     // LONG: доля покупок, SHORT: доля продаж
@@ -186,6 +187,8 @@ public final class Settings {
         AGGR_MIN_RATIO_LONG_MICRO  = getDouble(p, "aggr.min.ratio.long.micro",  AGGR_MIN_RATIO_LONG_MICRO);
         AGGR_MIN_RATIO_SHORT       = getDouble(p, "aggr.min.ratio.short",       AGGR_MIN_RATIO_SHORT);
         AGGR_MIN_RATIO_SHORT_MICRO = getDouble(p, "aggr.min.ratio.short.micro", AGGR_MIN_RATIO_SHORT_MICRO);
+        AGGR_MIN_USD = getDouble(p, "aggr.min.usd", AGGR_MIN_USD);
+        AGGR_MAX_FLOW_USD = getDouble(p, "aggr.max.flow.usd", AGGR_MAX_FLOW_USD);
     }
 
 

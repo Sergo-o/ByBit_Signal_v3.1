@@ -1,6 +1,7 @@
 package filters;
 
 import app.Settings;
+import log.FilterLog;
 import state.SymbolState;
 import tuning.AutoTuner;
 
@@ -16,7 +17,7 @@ public final class AdaptiveAggressorFilter {
     private AdaptiveAggressorFilter() {}
 
     // Базовый множитель порога "потока" от среднего объёма (если нужен)
-    private static final double BASE_MIN_FLOW_MUL = 0.25;  // min flow vs avgVolume
+    private static final double BASE_MIN_FLOW_MUL = 0.15;  // min flow vs avgVolume
 
     public static boolean pass(SymbolState s, boolean isLong, String symbol) {
         // 0. Быстрая проверка: фильтр вообще включён?
@@ -57,8 +58,11 @@ public final class AdaptiveAggressorFilter {
 
         // 3. Базовый минимальный абсолютный поток для агрессора (USD)
         //    Можно привязать как к константе, так и к среднему объёму
-        double minAbsFlow = Math.max(Settings.AGGR_MIN_USD,
-                avgVol * BASE_MIN_FLOW_MUL);
+        double targetFlow = avgVol * BASE_MIN_FLOW_MUL;
+        double minAbsFlow = Math.max(
+                Settings.AGGR_MIN_USD,
+                Math.min(targetFlow, Settings.AGGR_MAX_FLOW_USD)
+        );
 
         // 4. Подмешиваем авто-тюнер (если включён)
         if (Settings.AUTOTUNER_ENABLED) {
@@ -82,13 +86,14 @@ public final class AdaptiveAggressorFilter {
         boolean pass = (ratio >= minRatio) && (flow >= minAbsFlow);
 
         if (!pass && Settings.OI_FILTER_LOG_ENABLED) {
-            System.out.printf(
+            String msg = String.format(
                     "[Filter|AGGR] %s %s flow=%.0f (min=%.0f) ratio=%.2f (min=%.2f) micro=%s volt=%.3f%n",
                     symbol, (isLong ? "LONG" : "SHORT"),
                     flow, minAbsFlow,
                     ratio, minRatio,
                     micro, volt
             );
+                FilterLog.logAggr(symbol, msg);
         }
 
         // В режиме TRAIN можно логировать, но не блокировать

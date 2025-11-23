@@ -1,5 +1,6 @@
 package filters;
 
+import log.FilterLog;
 import state.SymbolState;
 import app.Settings;
 import tuning.AutoTuner;
@@ -9,127 +10,135 @@ import java.util.Deque;
 import java.util.Iterator;
 
 /**
- * Адаптивный OI-фильтр: скорость/ускорение + динамика порогов.
- * Не добавляет полей в SymbolState, работает только на oiList.
+ * Адаптивный OI-фильтр:
+ *  - смотрит скорость и ускорение OI,
+ *  - использует относительную "нервность" OI (volRel по OI),
+ *  - учитывает профиль micro / non-micro,
+ *  - умеет работать в TRAIN-режиме (логируем, но не блокируем сигнал).
+ *
+ * Работает только по oiList в SymbolState, новых полей не добавляет.
  */
 public final class OIAccelerationFilter {
 
     private OIAccelerationFilter() {}
 
-    // Базовые нижние пороги (как «пол»)
-    // Если у тебя уже есть такие константы в Settings — можешь перекинуть их туда и использовать оттуда.
-    private static final double BASE_MIN_OI_VELOCITY = 1e-6;   // 0.0001%
-    private static final double BASE_MIN_OI_ACCEL     = 5e-7;  // 0.00005%
+    // Сколько последних значений OI используем для оценки "нервности" (volRel)
+    private static final int VOLREL_WINDOW = 6;
 
-    // Максимум истории, по которой оценим «фон» скорости (чтобы не бегать по всей deque)
-    private static final int HIST_BARS = 30;
+    // Базовые пороги, если нет автотюнера
+    private static final double BASE_MIN_VEL   = 0.0010;
+    private static final double BASE_MIN_ACCEL = 0.0005;
 
     /**
-     * Главный метод фильтра.
-     * Возвращает true — если OI-импульс «достаточен».
+     * Главная точка входа.
+     *
+     * @param s      состояние символа
+     * @param symbol тикер (нужен только для логов)
+     * @return true  — фильтр пропускает сигнал
+     *         false — фильтр блокирует (кроме TRAIN-режима)
      */
-    public static boolean pass(SymbolState s) {
-        Deque<Double> q = s.oiList;
-        if (q == null || q.size() < 3) {
-            // мало истории — не блокируем сигнал
+    public static boolean pass(SymbolState s, String symbol) {
+        // 0. Глобальный выключатель
+        if (!Settings.OI_FILTER_ENABLED) {
             return true;
         }
 
-        // Три последних значения OI
-        // last = текущий, prev1 = минуту назад, prev2 = две минуты назад
-        double last  = peekFromEnd(q, 0);
-        double prev1 = peekFromEnd(q, 1);
-        double prev2 = peekFromEnd(q, 2);
-
-        if (prev1 <= 0 || prev2 <= 0) {
+        Deque<Double> oiList = s.oiList;
+        if (oiList == null || oiList.size() < 3) {
+            // слишком мало точек, чтобы оценивать скорость/ускорение
             return true;
         }
 
-        // Скорость и ускорение (в долях)
+        double last = getFromEnd(oiList, 0);
+        double prev1 = getFromEnd(oiList, 1);
+        double prev2 = getFromEnd(oiList, 2);
+
+        if (prev1 <= 0 || prev2 <= 0 || last <= 0) {
+            return true;
+        }
+
+        double velNow = (last - prev1) / prev1;
         double velPrev = (prev1 - prev2) / prev2;
-        double velNow  = (last  - prev1) / prev1;
-        double accel   = velNow - velPrev;
+        double accel = velNow - velPrev;
 
-        // --- Динамическая калибровка порогов ---
+        double volRel = computeVolRel(oiList, VOLREL_WINDOW);
 
-        // 1) «Фоновая» средняя скорость за HIST_BARS (в абсолюте)
-        double meanAbsVel = meanAbsVelocity(q, Math.min(q.size(), HIST_BARS));
+        boolean isMicro = last > 0 && last < Settings.MICRO_OI_USD;
 
-        // 2) Волатильность рынка: чем выше — тем выше пороги
-        double volt = Math.max(1e-9, s.avgVolatility); // защита от 0
+        // === Пороговые значения ===
+        double minVel = BASE_MIN_VEL;   // 0.001
+        double minAccel = BASE_MIN_ACCEL; // 0.0005
 
-        // 3) «Микро»-профиль: для микро — пороги мягче
-        boolean isMicro = s.avgOiUsd < Settings.MICRO_OI_USD;
-
-        // Базовые пороги (мягкие → как в TRAIN, жёсткие → LIVE)
-        // Если в Settings у тебя уже есть режим обучения — он подключается тут:
-        boolean SOFT = Settings.OI_TRAINING_MODE; // true=мягко, false=жёстко
-
-        double kSoft = SOFT ? 0.6 : 1.0;      // смягчение порогов в TRAIN
-        double kMicro = isMicro ? 0.75 : 1.0; // мягче для микро
-
-        // Заводим адаптивную «надбавку» от волатильности и «фоновой» скорости
-        // Идея: если рынок шумный (volt большая), требуем больше vel/accel; если «фон» скорости большой — тоже.
-        double adaptVel  = BASE_MIN_OI_VELOCITY + 0.75 * meanAbsVel + 0.5 * volt * 1e-3;
-        double adaptAcc  = BASE_MIN_OI_ACCEL     + 0.50 * meanAbsVel + 0.4 * volt * 5e-4;
-
-        // Итоговые пороги
-        double minVel  = Math.max(BASE_MIN_OI_VELOCITY, adaptVel)  * kSoft * kMicro;
-        double minAcc  = Math.max(BASE_MIN_OI_ACCEL,     adaptAcc) * kSoft * kMicro;
-
-        // Подмешиваем базовые пороги из AutoTuner (если включён)
-        if (Settings.AUTOTUNER_ENABLED) {
-            AutoTuner.Profile profile =
-                    isMicro ? AutoTuner.Profile.MICRO : AutoTuner.Profile.GLOBAL;
-            AutoTuner.OIParams params = AutoTuner.getInstance().getOiParams(profile);
-
-            minVel = Math.max(minVel, params.minVelBase);
-            minAcc = Math.max(minAcc, params.minAccelBase);
+        if (isMicro) {
+            minVel *= 1.2;
+            minAccel *= 1.2;
         }
 
+// считаем velNow, accel как у тебя
 
-        // Проходим по условиям
-        boolean pass = (velNow >= minVel) && (accel >= minAcc);
+        boolean pass;
 
-        // Отладка (ровно как ты логировал раньше)
-        // Примечание: volRel берём 0..1 для информативности, без участия в решении
-        double volRel = 0.0;
-        Double lastVol = (s.volumes != null ? s.volumes.peekLast() : null);
-        if (lastVol != null && s.avgVolUsd > 0) volRel = lastVol / s.avgVolUsd;
+// 1) если OI падает — сразу режем
+        if (velNow <= 0.0) {
+            pass = false;
+        } else {
+            boolean strongVel = velNow >= minVel;
+            boolean strongAccel = accel >= minAccel;
 
-        if (!pass) {
-//            System.out.printf(
-//                    "[Filter] OIAcceler vel=%.5f (min=%.5f) accel=%.5f (min=%.5f) volRel=%.2f micro=%s oi: %.0f→%.0f%n",
-//                    velNow, minVel, accel, minAcc, volRel, isMicro, prev1, last
-//            );
+            // 2) достаточно ИЛИ сильной скорости, ИЛИ сильного ускорения
+            pass = strongVel || strongAccel;
         }
+
+// volRel сейчас только логируем, но НЕ используем в pass
+        if (!pass && Settings.OI_FILTER_LOG_ENABLED) {
+            String msg = String.format(
+                    "vel=%.5f (min=%.5f) accel=%.5f (min=%.5f) volRel=%.4f micro=%s oi: %.0f→%.0f",
+                    velNow, minVel, accel, minAccel, volRel, isMicro, prev1, last
+            );
+            FilterLog.logOiAccel(symbol, msg);
+        }
+
+        if (Settings.OI_TRAIN) {
+            return true;
+        }
+
         return pass;
     }
 
-    // === utils ===
 
-    private static double peekFromEnd(Deque<Double> q, int offsetFromLast) {
-        // offsetFromLast = 0 → последний; 1 → предыдущий; 2 → позапрошлый
-        // Идём с конца итератором (Deque в проекте — LinkedList или ArrayDeque)
-        Iterator<Double> it = q.descendingIterator();
-        int i = 0;
+        /**
+         * Взять элемент из конца декью:
+         * offset=0 → последний,
+         * offset=1 → предпоследний, и т.д.
+         */
+    private static double getFromEnd(Deque<Double> dq, int offsetFromEnd) {
+        if (dq.isEmpty()) return 0.0;
+        // Небольшой обход с конца — глубина маленькая (3–10), не страшно
+        int idx = 0;
+        Iterator<Double> it = dq.descendingIterator();
         while (it.hasNext()) {
             double v = it.next();
-            if (i == offsetFromLast) return v;
-            i++;
+            if (idx == offsetFromEnd) {
+                return v;
+            }
+            idx++;
         }
-        // fallback
-        return q.peekLast() != null ? q.peekLast() : 0.0;
+        return dq.getFirst();
     }
 
-    private static double meanAbsVelocity(Deque<Double> q, int n) {
-        if (n < 2) return 0.0;
-        // берём n последних значений и считаем средний |delta / prev|
-        ArrayDeque<Double> buf = new ArrayDeque<>(n);
-        Iterator<Double> it = q.descendingIterator();
-        while (it.hasNext() && buf.size() < n) {
+    /**
+     * Оценка "нервности" OI по окну:
+     * средний модуль относительного шага |Δoi/oi|.
+     */
+    private static double computeVolRel(Deque<Double> oiList, int window) {
+        if (oiList.size() < 2) return 0.0;
+
+        Deque<Double> buf = new ArrayDeque<>();
+        Iterator<Double> it = oiList.descendingIterator();
+        while (it.hasNext() && buf.size() < window) {
             buf.addFirst(it.next());
         }
+
         double sum = 0.0;
         int cnt = 0;
         Double prev = null;
