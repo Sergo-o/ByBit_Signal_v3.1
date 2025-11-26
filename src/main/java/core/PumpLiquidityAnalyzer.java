@@ -1,9 +1,7 @@
 package core;
 
 import debug.DebugPrinter;
-import filters.AggressorBurstFilter;
-import filters.AdaptiveAggressorFilter;
-import filters.OIAccelerationFilter;
+import filters.*;
 import log.FilterLog;
 import ml.MicroNN;
 import signal.*;
@@ -122,6 +120,39 @@ public class PumpLiquidityAnalyzer {
             }
             s.avgVolatility = ewma(s.avgVolatility, volt, Settings.EWMA_ALPHA_SLOW);
 
+            // === Snapshot для ReversalWatchService до сброса агрессора ===
+            double volNow = volumeUsd;
+            double oiNow  = oiUsd;
+
+            double avgVol = s.avgVolUsd;
+            double avgOi  = s.avgOiUsd;
+
+            double volRel = avgVol > 0 ? volNow / avgVol : 0.0;
+            double oiRel  = avgOi  > 0 ? oiNow  / avgOi  : 0.0;
+
+            double flow = s.buyAgg1m + s.sellAgg1m;
+            double buyRatio;
+            if (flow > 0.0) {
+                buyRatio = s.buyAgg1m / flow;
+            } else {
+                buyRatio = 0.5;
+            }
+
+            MarketSnapshot snap = new MarketSnapshot(
+                    volNow,
+                    volRel,
+                    oiNow,
+                    oiRel,
+                    flow,
+                    buyRatio,
+                    0.0,                // deltaShift, если не считаешь — оставляем 0
+                    s.avgVolatility,
+                    0.0                 // score в этом контексте неважен
+            );
+
+            // прогоняем через watcher все активные сигналы по этому symbol
+            ReversalWatchService.getInstance().onKline(symbol, s, snap);
+
             // сброс минутного «живого» потока агрессора — начинается новый бар
             s.buyAgg1m = 0.0;
             s.sellAgg1m = 0.0;
@@ -169,14 +200,14 @@ public class PumpLiquidityAnalyzer {
             // =========================
             // 1. Базовые метрики по монете
             // =========================
-            double oiNow   = s.oiList.getLast();
-            double volNow  = s.volumes.getLast();
-            double flow    = s.buyAgg1m + s.sellAgg1m;
+            double oiNow = s.oiList.getLast();
+            double volNow = s.volumes.getLast();
+            double flow = s.buyAgg1m + s.sellAgg1m;
 
-            double avgVol  = s.avgVolUsd;
-            double avgOi   = s.avgOiUsd;
-            double volRel  = avgVol > 0 ? volNow / avgVol : 0.0;
-            double oiRel   = avgOi  > 0 ? oiNow  / avgOi  : 0.0;
+            double avgVol = s.avgVolUsd;
+            double avgOi = s.avgOiUsd;
+            double volRel = avgVol > 0 ? volNow / avgVol : 0.0;
+            double oiRel = avgOi > 0 ? oiNow / avgOi : 0.0;
 
             double buyRatio;
             if (flow > 0.0) {
@@ -185,7 +216,7 @@ public class PumpLiquidityAnalyzer {
                 buyRatio = 0.5;
             }
 
-            boolean isLong  = buyRatio > 0.5;
+            boolean isLong = buyRatio > 0.5;
             boolean isHeavy = SEED_HEAVY.contains(symbol) || s.avgVolUsd >= 5_000_000;
             boolean isMicro = oiNow < MICRO_OI_USD;
 
@@ -196,12 +227,12 @@ public class PumpLiquidityAnalyzer {
             // 2.1. OI по профилю
             double minOi = isHeavy ? MIN_OI_HEAVY : MIN_OI_LIGHT;
             if (oiNow < minOi) {
-                String reason = String.format(
-                        "Низкий OI: %d (min=%.0f, heavy=%s, micro=%s)",
-                        (long) oiNow, minOi, isHeavy, isMicro
-                );
-                DebugPrinter.printIgnore(symbol, reason);
-                FilterLog.logIgnore(symbol, reason);
+//                String reason = String.format(
+//                        "Низкий OI: %d (min=%.0f, heavy=%s, micro=%s)",
+//                        (long) oiNow, minOi, isHeavy, isMicro
+//                );
+//                DebugPrinter.printIgnore(symbol, reason);
+//                FilterLog.logIgnore(symbol, reason);
                 return Optional.empty();
             }
 
@@ -221,12 +252,12 @@ public class PumpLiquidityAnalyzer {
             }
 
             if (flow < minFlow) {
-                String reason = String.format(
-                        "Низкий расход: %d (min=%.0f, avgVol=%.0f, heavy=%s, micro=%s)",
-                        (long) flow, minFlow, avgVol, isHeavy, isMicro
-                );
-                DebugPrinter.printIgnore(symbol, reason);
-                FilterLog.logIgnore(symbol, reason);
+//                String reason = String.format(
+//                        "Низкий расход: %d (min=%.0f, avgVol=%.0f, heavy=%s, micro=%s)",
+//                        (long) flow, minFlow, avgVol, isHeavy, isMicro
+//                );
+//                DebugPrinter.printIgnore(symbol, reason);
+//                FilterLog.logIgnore(symbol, reason);
                 return Optional.empty();
             }
 
@@ -234,8 +265,8 @@ public class PumpLiquidityAnalyzer {
             // 2.3. Направление потока (слишком нейтральное направление)
             double dirOffset = Math.abs(buyRatio - 0.5); // 0 = нейтрально, 0.5 = чистый one-side
             if (dirOffset < MIN_FLOW_RATIO) {
-                DebugPrinter.printIgnore(symbol,
-                        String.format("Слабое направление, buyRatio=%.2f", buyRatio));
+//                DebugPrinter.printIgnore(symbol,
+//                        String.format("Слабое направление, buyRatio=%.2f", buyRatio));
                 return Optional.empty();
             }
 
@@ -259,7 +290,7 @@ public class PumpLiquidityAnalyzer {
             // 3.1. OI Acceleration Filter
             // -------------------------
             if (OI_FILTER_ENABLED) {
-                boolean ok = OIAccelerationFilter.pass(s,symbol);
+                boolean ok = OIAccelerationFilter.pass(s, symbol);
                 if (ok) {
                     score++;
                 } else if (!OI_SOFT_MODE && !OI_TRAINING_MODE) {
@@ -357,7 +388,49 @@ public class PumpLiquidityAnalyzer {
                     0.0
             );
 
-            SignalStatsService.getInstance().trackSignal(symbol, "ENTER", isLong ? "LONG" : "SHORT", s.lastPrice, score, isMicro, snap);
+// === Трекинг сигнала + id ===
+            SignalStatsService stats = SignalStatsService.getInstance();
+            String signalId = stats.trackSignal(
+                    symbol,
+                    "ENTER",
+                    isLong ? "LONG" : "SHORT",
+                    s.lastPrice,
+                    score,
+                    isMicro,
+                    snap
+            );
+
+            // === MarketSnapshot для фильтра ===
+            MarketSnapshot ms = new MarketSnapshot(
+                    volNow,
+                    volRel,
+                    oiNow,
+                    oiRel,
+                    flow,
+                    buyRatio,
+                    0.0,                 // deltaShift, если нужно — подставишь своё
+                    s.avgVolatility,     // voltRel / волатильность
+                    score                // текущий score
+            );
+
+            // === Проверка на фейк-сигнал ===
+            FakeSignalFilter fakeFilter = new FakeSignalFilter(isLong ? "LONG" : "SHORT");
+            boolean passFake = fakeFilter.pass(symbol, s, ms);
+            if (!passFake) {
+                // помечаем сигнал как фейковый для экспорта
+                stats.markAsFake(signalId);
+                // можно тут же завершить трекинг, если не хочешь ждать SNAPSHOT_ROUNDS:
+                // stats.finishTracking(signalId);
+                return Optional.empty();
+            }
+
+            // === Старт наблюдения за разворотом по этому сигналу ===
+            ReversalWatchService.getInstance().startWatch(
+                    signalId,
+                    symbol,
+                    isLong,
+                    now
+            );
 
             // ==========================
             // 6. Обновляем состояние

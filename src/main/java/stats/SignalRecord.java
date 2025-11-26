@@ -19,6 +19,7 @@ public class SignalRecord {
             Collections.synchronizedList(new ArrayList<>());
 
     public volatile boolean completed = false;
+    public volatile boolean fake = false;
 
     // Агрегаты для модели эффективности (в долях, не в %):
     public volatile double maxReturn = 0.0; // макс. (price/entry - 1)

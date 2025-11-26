@@ -91,6 +91,28 @@ public final class Settings {
     public static boolean OI_FILTER_LOG_ENABLED = true;   // логировать метрики (как в твоих логах)
     public static boolean OI_TRAINING_MODE      = true;   // тренировочный режим: фильтр не блокирует ничего
 
+    // ===== Fake-signal filter (раннее отсечение плохих входов) =====
+    public static int FAKE_BARS_LOOKBACK             = 3;      // сколько баров назад смотрим
+    public static double FAKE_MIN_TREND_MOVE         = 0.004;  // 0.4% движения считаем трендом
+    public static double FAKE_MAX_ADVERSE_SHADOW     = 0.003;  // 0.3% обратного движения считаем опасным
+    public static double FAKE_MIN_OI_REL             = 1.0;    // OI должен хотя бы не падать
+    public static double FAKE_MIN_BUY_RATIO_FOR_LONG = 0.45;   // для LONG: ниже — доминируют продавцы
+    public static double FAKE_MAX_BUY_RATIO_FOR_SHORT= 0.55;   // для SHORT: выше — доминируют покупатели;
+
+    // ===== Price reversal filter (ослабление импульса) =====
+    public static int REV_WINDOW_BARS           = 4;      // размер окна по барам
+    public static double REV_MIN_SWING          = 0.005;  // 0.5% — минимальный импульс
+    public static double REV_MIN_PULLBACK       = 0.003;  // 0.3% отката от экстремума
+    public static double REV_BR_STRONG_BUY      = 0.70;   // buyRatio выше — сильный бай
+    public static double REV_BR_NEUTRAL_BUY     = 0.55;   // падение ниже — уход к нейтралке
+    public static double REV_BR_STRONG_SELL     = 0.30;   // buyRatio ниже — сильный селл
+    public static double REV_BR_NEUTRAL_SELL    = 0.45;   // подъём выше — уход к нейтралке
+
+    // ===== Reversal watch (держать монету в фокусе после сигнала) =====
+    public static boolean REV_WATCH_ENABLED   = true;
+    public static int     REV_WATCH_MINUTES   = 30;   // сколько минут после сигнала держим монету в фокусе
+
+
     // Базовые очень мягкие пороги (в долях, не процентах)
     public static double OI_MIN_VEL_BASE   = 1e-6;        // базовый минимум по скорости OI
     public static double OI_MIN_ACCEL_BASE = 5e-7;        // базовый минимум по ускорению OI

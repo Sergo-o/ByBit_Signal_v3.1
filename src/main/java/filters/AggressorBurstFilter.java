@@ -132,7 +132,7 @@ public final class AggressorBurstFilter {
                     streakTotalVol, minAbsVol,
                     micro, volt
             );
-            FilterLog.logBurst(symbol, msg);
+//            FilterLog.logBurst(symbol, msg);
         }
 
         if (Settings.BURST_TRAIN) {

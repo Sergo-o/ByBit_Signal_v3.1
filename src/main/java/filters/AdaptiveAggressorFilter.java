@@ -105,7 +105,7 @@ public final class AdaptiveAggressorFilter {
                     ratio, minRatio, dirThresh,
                     micro, volt
             );
-            FilterLog.logAggr(symbol, msg);
+//            FilterLog.logAggr(symbol, msg);
         }
 
         // В режиме TRAIN можно логировать, но не блокировать

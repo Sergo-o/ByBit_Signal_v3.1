@@ -95,7 +95,7 @@ public final class OIAccelerationFilter {
                     "vel=%.5f (min=%.5f) accel=%.5f (min=%.5f) volRel=%.4f micro=%s oi: %.0f→%.0f",
                     velNow, minVel, accel, minAccel, volRel, isMicro, prev1, last
             );
-            FilterLog.logOiAccel(symbol, msg);
+//            FilterLog.logOiAccel(symbol, msg);
         }
 
         if (Settings.OI_TRAIN) {

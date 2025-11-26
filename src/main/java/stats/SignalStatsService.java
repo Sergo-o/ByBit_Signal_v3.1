@@ -23,9 +23,10 @@ public class SignalStatsService {
 
     // --- configurable ---
     private final int SNAPSHOT_INTERVAL_SECONDS = 120; // 2 минуты
-    private final int SNAPSHOT_ROUNDS = 10;             // 4 снимка (~8 минут)
+    private final int SNAPSHOT_ROUNDS = 30;             // 4 снимка (~8 минут)
     private final boolean AUTO_EXPORT_ON_COMPLETE = true;
-    private final Path EXPORT_DIR = Paths.get("./signal_exports");
+    private final Path DIR_SIGNAL_COIN = Paths.get("./signal_coin");
+    private final Path DIR_SIGNAL_FAKE = Paths.get("./signal_fake");
     // ---------------------
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
@@ -36,7 +37,7 @@ public class SignalStatsService {
     private final SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss");
 
     private SignalStatsService() {
-        try { Files.createDirectories(EXPORT_DIR); } catch (IOException ignored) {}
+        try { Files.createDirectories(DIR_SIGNAL_COIN); } catch (IOException ignored) {}
     }
 
     // === ПУБЛИЧНЫЙ метод установки провайдера метрик ===
@@ -130,6 +131,45 @@ public class SignalStatsService {
         return true;
     }
 
+    /**
+     * Добавить снапшот в момент разворота (REV_EXIT).
+     * Обновляет maxReturn / minReturn так же, как SnapshotTask.
+     */
+    public void addReversalSnapshot(String id,
+                                    double price,
+                                    double oiNow,
+                                    double volNow,
+                                    double buyRatio,
+                                    double voltRel,
+                                    double funding) {
+        SignalRecord r = records.get(id);
+        if (r == null || r.completed) return;
+        if (r.initPrice <= 0.0) return;
+
+        // текущая доходность относительно входа
+        double ret = price / r.initPrice - 1.0;
+
+        // обновляем экстремумы (как в SnapshotTask)
+        r.maxReturn = Math.max(r.maxReturn, ret);
+        r.minReturn = Math.min(r.minReturn, ret);
+
+        SignalSnapshot snap = new SignalSnapshot(
+                System.currentTimeMillis(),
+                price,
+                oiNow,
+                volNow,
+                buyRatio,
+                voltRel,
+                funding,
+                "REV_EXIT",
+                r.maxReturn * 100.0,  // peak profit, %
+                r.minReturn * 100.0   // drawdown, %
+        );
+
+        r.addSnapshot(snap);
+    }
+
+
     // завершить и экспортировать (без SQL)
     public void finishTracking(String id) {
         SignalRecord r = records.get(id);
@@ -146,9 +186,8 @@ public class SignalStatsService {
             AutoTuner.Profile profile =
                     r.isMicro ? AutoTuner.Profile.MICRO : AutoTuner.Profile.GLOBAL;
 
-            // r.maxReturn / r.minReturn — относительные доходности (0.05 = +5%)
             double peakPct = r.maxReturn * 100.0;
-            double ddPct = r.minReturn * 100.0;
+            double ddPct   = r.minReturn * 100.0;
 
             try {
                 AutoTuner.getInstance().onSignalFinished(profile, peakPct, ddPct);
@@ -157,6 +196,7 @@ public class SignalStatsService {
             }
         }
 
+        // === файловый экспорт ===
         if (AUTO_EXPORT_ON_COMPLETE) {
             try {
                 exportRecord(r);
@@ -167,11 +207,15 @@ public class SignalStatsService {
     }
 
 
-        // экспорт одной записи в JSON + "ровный" CSV (одна строка = один снапшот)
+
+    // экспорт одной записи в JSON + "ровный" CSV (одна строка = один снапшот)
     public void exportRecord(SignalRecord r) throws IOException {
         String baseName = r.symbol + "_" + sdf.format(new Date(r.createdAtMs));
-        Path json = EXPORT_DIR.resolve(baseName + ".json");
-        Path csv  = EXPORT_DIR.resolve(baseName + ".csv");
+        Path targetDir = r.fake
+                ? DIR_SIGNAL_FAKE
+                : DIR_SIGNAL_COIN;
+        Path json = targetDir.resolve(baseName + ".json");
+        Path csv  = targetDir.resolve(baseName + ".csv");
 
         // JSON — как и раньше
         try (Writer w = Files.newBufferedWriter(json,
@@ -392,5 +436,12 @@ public class SignalStatsService {
         private static ICurrentMetricsProvider provider;
         public static void set(ICurrentMetricsProvider p) { provider = p; }
         public static ICurrentMetricsProvider get() { return provider; }
+    }
+
+    public void markAsFake(String id) {
+        SignalRecord r = records.get(id);
+        if (r != null) {
+            r.fake = true;
+        }
     }
 }
