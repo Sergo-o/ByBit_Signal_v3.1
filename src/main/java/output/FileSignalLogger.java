@@ -9,7 +9,7 @@ import java.time.format.DateTimeFormatter;
 
 public class FileSignalLogger {
 
-    private static final String FILE_NAME = "signals.log";
+    private static final String FILE_NAME = "logs/signals.log";
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public static void log(TradeSignal s) {

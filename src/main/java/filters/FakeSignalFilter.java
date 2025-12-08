@@ -63,7 +63,7 @@ public final class FakeSignalFilter implements BaseFilter {
             if (badFlow) {
                 logFake(symbol, entryPrice, closes, oiRel, buyRatio);
                 // здесь же можем триггернуть сохранение в CSV (см. ниже)
-                return false;
+                return true;
             }
         } else { // SHORT
             boolean badFlow =
@@ -74,7 +74,7 @@ public final class FakeSignalFilter implements BaseFilter {
 
             if (badFlow) {
                 logFake(symbol, entryPrice, closes, oiRel, buyRatio);
-                return false;
+                return true;
             }
         }
 

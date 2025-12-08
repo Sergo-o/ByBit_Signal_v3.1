@@ -245,7 +245,7 @@ public class Main {
 
         BybitWsClient.shutdown();
         SignalStatsService.getInstance().shutdown();
-        SignalStatsService.getInstance().exportAllToCsv(Paths.get("signal_exports/all_signals.csv"));
+        SignalStatsService.getInstance().exportAllToCsv(Paths.get("signal_coin/all_signals.csv"));
         System.out.println("🚪 Завершение программы...");
         System.exit(0);
     }

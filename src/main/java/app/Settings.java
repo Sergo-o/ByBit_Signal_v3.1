@@ -100,9 +100,9 @@ public final class Settings {
     public static double FAKE_MAX_BUY_RATIO_FOR_SHORT= 0.55;   // для SHORT: выше — доминируют покупатели;
 
     // ===== Price reversal filter (ослабление импульса) =====
-    public static int REV_WINDOW_BARS           = 4;      // размер окна по барам
+    public static int REV_WINDOW_BARS           = 3;      // размер окна по барам
     public static double REV_MIN_SWING          = 0.005;  // 0.5% — минимальный импульс
-    public static double REV_MIN_PULLBACK       = 0.003;  // 0.3% отката от экстремума
+    public static double REV_MIN_PULLBACK       = 0.0025;  // 0.25% отката от экстремума
     public static double REV_BR_STRONG_BUY      = 0.70;   // buyRatio выше — сильный бай
     public static double REV_BR_NEUTRAL_BUY     = 0.55;   // падение ниже — уход к нейтралке
     public static double REV_BR_STRONG_SELL     = 0.30;   // buyRatio ниже — сильный селл
